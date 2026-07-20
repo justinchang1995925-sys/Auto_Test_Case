@@ -10,7 +10,7 @@
 
 ### Docx / Wiki 文档
 
-1. 读取 [`lark-shared`](../.agents/skills/lark-shared/SKILL.md) 确认认证状态
+1. 读取 [`lark-shared`](../../../.agents/skills/lark-shared/SKILL.md) 确认认证状态
 2. 切 `lark-doc`：`lark-cli docs +fetch --doc "<url或token>"`
 3. 文档较长时先用 `--scope simple` 获取结构，再按需局部读取
 4. Wiki URL 需先 `lark-cli drive +inspect --url '<url>'` 获取底层 docx token
