@@ -1,5 +1,7 @@
 # 输出模板与维度检查清单
 
+> 编号说明：**REQ-ID** = 需求条目（Requirement），**TP-ID** = 测试点（Test Point），**TC-ID** = 测试用例（Test Case）。三者构成追溯链路 `REQ → TP → TC`，完整含义与编号规则见 [SKILL.md](SKILL.md) 「编号体系」。
+
 ## 主表与附表
 
 - 主表：测试执行使用，要求步骤清晰、预期可判定
