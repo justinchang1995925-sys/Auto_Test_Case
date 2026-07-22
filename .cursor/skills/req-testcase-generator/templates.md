@@ -6,8 +6,48 @@
 
 - 所有交付件**独立分开**呈现，禁止合并混在一起。
 - **除测试点思维导图外**，其余交付件（需求清单、主表、附表、追溯表、专项测试用例、专项数据采集、质量审计）**最终交付必须是 Excel**（独立 Sheet 或独立 `.xlsx`），**严禁用 `.md`/`.csv`/`.txt` 或对话内 Markdown 表格作正式交付**；Markdown 表格仅供预览。
+- **交付件名称必须为中文**：文件名/Sheet 名用中文，如「测试用例主表」「评审追溯表（含风险评估）」「追溯矩阵表（REQ-TP-TC）」。
+- **每个 Excel 交付表必须**：首行表头加粗、表头带筛选下拉框、列宽按内容自适应（见下「Excel 交付件格式要求」）。
 - **测试点思维导图**单独交付为**可直接导入飞书在线思维导图（思维笔记）的缩进大纲文件**（Markdown 大纲 / OPML），模板见下「思维导图导入格式」。
 - 交付清单与落表方式见 [SKILL.md](SKILL.md) 「交付物规范」。
+
+## Excel 交付件格式要求
+
+每个 Excel 交付表（除思维导图外全部）统一满足：
+
+| 要求 | 飞书电子表格（lark-sheets） | 本地 openpyxl |
+|------|---------------------------|--------------|
+| 首行表头加粗 | 设置首行单元格样式 `bold` | `cell.font = Font(bold=True)` |
+| 表头筛选下拉框 | 对表头行加筛选器/筛选视图 | `ws.auto_filter.ref = "A1:<末列><末行>"` |
+| 列宽自适应 | 按列内容调整列宽 | 按各列最长文本估算 `ws.column_dimensions[col].width`（中文≈2 倍宽，封顶 ~60） |
+| 名称中文 | Sheet 名用中文交付件名 | `ws.title` / 文件名用中文 |
+
+本地生成参考（openpyxl，列宽自适应 + 表头加粗 + 筛选）：
+
+```python
+from openpyxl import Workbook
+from openpyxl.styles import Font
+from openpyxl.utils import get_column_letter
+
+def dump_sheet(ws, headers, rows):
+    ws.append(headers)
+    for r in rows:
+        ws.append(r)
+    # 首行加粗
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    # 筛选下拉框（覆盖表头+数据）
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{ws.max_row}"
+    # 列宽自适应（中文按 2 倍宽度估算，封顶 60）
+    for i, _ in enumerate(headers, 1):
+        col = get_column_letter(i)
+        width = 0
+        for cell in ws[col]:
+            v = "" if cell.value is None else str(cell.value)
+            w = sum(2 if ord(ch) > 255 else 1 for ch in v)
+            width = max(width, w)
+        ws.column_dimensions[col].width = min(width + 2, 60)
+```
 
 ## 思维导图导入格式（可导入飞书在线思维导图）
 
