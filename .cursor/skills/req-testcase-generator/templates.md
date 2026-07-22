@@ -4,8 +4,9 @@
 
 ## 交付形式
 
-- 所有交付件**独立分开**呈现，禁止合并混在一起。
-- **除测试点思维导图外**，其余交付件（需求清单、主表、附表、追溯表、专项测试用例、专项数据采集、质量审计）**最终交付必须是 Excel**（独立 Sheet 或独立 `.xlsx`），**严禁用 `.md`/`.csv`/`.txt` 或对话内 Markdown 表格作正式交付**；Markdown 表格仅供预览。
+- 所有交付件**独立分开**呈现（各占一个 Sheet），禁止把多种交付件合并混在同一张 Sheet。
+- **除测试点思维导图外**，其余交付件（需求清单、主表、附表、追溯表、专项测试用例、专项数据采集、质量审计）**最终交付必须是 Excel**，且统一组织为**同一个工作簿的多个 Sheet**（一件一 Sheet），**严禁用 `.md`/`.csv`/`.txt` 或对话内 Markdown 表格作正式交付**；Markdown 表格仅供预览。
+- **默认双份交付**：本地一个多 Sheet `.xlsx` + 飞书一个在线电子表格，两套内容/结构/命名一致，交付时同时给出本地路径与飞书链接（用户明确只要一种时除外）。
 - **交付件名称必须为中文**：文件名/Sheet 名用中文，如「测试用例主表」「评审追溯表（含风险评估）」「追溯矩阵表（REQ-TP-TC）」。
 - **每个 Excel 交付表必须**：首行表头加粗、表头带筛选下拉框、列宽按内容自适应（见下「Excel 交付件格式要求」）。
 - **必须产出真正的 `.xlsx` 二进制文件**：本地用 `openpyxl` 真实写盘、飞书用 lark-sheets 建真实表格，使用者可打开/编辑/保存；禁止把 Markdown/CSV 改后缀冒充。生成后告知实际保存路径或链接。
@@ -48,7 +49,23 @@ def dump_sheet(ws, headers, rows):
             w = sum(2 if ord(ch) > 255 else 1 for ch in v)
             width = max(width, w)
         ws.column_dimensions[col].width = min(width + 2, 60)
+
+# 一个工作簿多 Sheet：每个交付件一个 Sheet，Sheet 名用中文
+wb = Workbook()
+wb.remove(wb.active)  # 移除默认空 Sheet
+for sheet_name, headers, rows in [
+    ("需求原子化清单", req_headers, req_rows),
+    ("测试用例主表", tc_headers, tc_rows),
+    ("评审追溯表（含风险评估）", ext_headers, ext_rows),
+    ("追溯矩阵表（REQ-TP-TC）", matrix_headers, matrix_rows),
+    # 有专项测试再加：("专项测试用例表", ...), ("专项数据采集表", ...)
+    ("质量审计报告", audit_headers, audit_rows),
+]:
+    dump_sheet(wb.create_sheet(title=sheet_name), headers, rows)
+wb.save("测试交付件-{需求名}-{日期}.xlsx")
 ```
+
+> 飞书侧：切 `lark-sheets` 建一个电子表格，用同样的中文名建多个 Sheet 并写入同样内容，返回链接。默认本地与飞书两套都要生成。
 
 ## 思维导图导入格式（可导入飞书在线思维导图）
 
