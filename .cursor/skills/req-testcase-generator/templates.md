@@ -68,37 +68,42 @@ wb.save("测试交付件-{需求名}-{日期}.xlsx")
 
 > 飞书侧：切 `lark-sheets` 建一个电子表格，用同样的中文名建多个 Sheet 并写入同样内容，返回链接。默认本地与飞书两套都要生成。
 
-## 思维导图 Draw.io 格式（可导入飞书云文档）
+## 思维导图 Draw.io 格式（完全适配飞书在线思维导图）
 
-思维导图正式交付为 Draw.io 文件 `测试点思维导图.drawio`（mxGraphModel XML），飞书云文档/画板可直接导入。层级与 Mermaid 预览一致：根=需求名 → 维度（功能/性能/稳定性/兼容性/安全/用户体验）→ 测试点，每个测试点节点文本以 `TP-ID` 开头，保证可追溯回追溯表。
+思维导图正式交付为 Draw.io 文件 `测试点思维导图.drawio`（mxGraphModel XML）。**必须使用飞书在线思维导图的树状模板样式，不能是普通流程图**——否则导入飞书后会呈现为「一堆黑色箭头指向节点」，视觉很差。适配要点（强制）：
 
-结构骨架（每个节点一个 `<mxCell vertex="1">`，父子用 `<mxCell edge="1" source=".." target="..">` 连线；`id` 唯一，`parent` 一般为 `"1"`）：
+1. **用思维导图树布局，不是有向流程图**：`mxGraphModel` 设 `arrows="0"`；根节点用 `treeRoot=1`，整体作为一棵思维导图树。
+2. **连线无箭头、平滑分支线**：每条 edge 样式用 `edgeStyle=entityRelationEdgeStyle;rounded=1;endArrow=none;startArrow=none;html=1;`（`endArrow=none` 去掉黑色箭头，改成飞书思维导图那种圆滑分支线）。
+3. **节点用圆角气泡 + 分维度配色**（不要默认黑框白底）：根节点、各维度、各维度下测试点分别用不同 `fillColor`/`strokeColor`，如功能=蓝、性能=橙、稳定性=绿、兼容性=青、安全=红、用户体验=紫。
+4. 层级与 Mermaid 一致：根=需求名 → 维度 → 测试点，测试点节点文本以 `TP-ID` 开头，可追溯回追溯表。
+
+结构骨架（`arrows="0"`、edge 无箭头、节点带配色）：
 
 ```xml
 <mxfile host="app.diagrams.net">
   <diagram name="测试点思维导图">
-    <mxGraphModel dx="800" dy="600" grid="0" fold="1" arrows="1" connect="1">
+    <mxGraphModel dx="800" dy="600" grid="0" fold="1" arrows="0" connect="1">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <!-- 根节点：需求名 -->
-        <mxCell id="root" value="【需求名称】" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="360" y="40" width="160" height="40" as="geometry"/></mxCell>
-        <!-- 维度节点 -->
-        <mxCell id="dim_f" value="功能" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="120" y="140" width="120" height="36" as="geometry"/></mxCell>
-        <!-- 测试点节点（文本以 TP-ID 开头） -->
-        <mxCell id="tp_f_001" value="TP-F-001 登录成功" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="40" y="220" width="200" height="36" as="geometry"/></mxCell>
-        <mxCell id="tp_f_002" value="TP-F-002 登录失败-密码错误" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="40" y="270" width="200" height="36" as="geometry"/></mxCell>
-        <!-- 连线：根→维度、维度→测试点 -->
-        <mxCell id="e1" edge="1" parent="1" source="root" target="dim_f"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e2" edge="1" parent="1" source="dim_f" target="tp_f_001"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e3" edge="1" parent="1" source="dim_f" target="tp_f_002"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <!-- 根节点：需求名（思维导图根，圆角气泡） -->
+        <mxCell id="root" value="【需求名称】" style="rounded=1;whiteSpace=wrap;html=1;treeRoot=1;fillColor=#111827;fontColor=#FFFFFF;strokeColor=none;" vertex="1" parent="1"><mxGeometry x="360" y="40" width="180" height="44" as="geometry"/></mxCell>
+        <!-- 维度节点（按维度配色） -->
+        <mxCell id="dim_f" value="功能" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#3B82F6;" vertex="1" parent="1"><mxGeometry x="120" y="140" width="120" height="40" as="geometry"/></mxCell>
+        <!-- 测试点节点（文本以 TP-ID 开头，浅色气泡） -->
+        <mxCell id="tp_f_001" value="TP-F-001 登录成功" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#93C5FD;" vertex="1" parent="1"><mxGeometry x="40" y="220" width="200" height="40" as="geometry"/></mxCell>
+        <mxCell id="tp_f_002" value="TP-F-002 登录失败-密码错误" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#93C5FD;" vertex="1" parent="1"><mxGeometry x="40" y="270" width="200" height="40" as="geometry"/></mxCell>
+        <!-- 分支线：无箭头、圆滑（飞书思维导图样式） -->
+        <mxCell id="e1" edge="1" parent="1" source="root" target="dim_f" style="edgeStyle=entityRelationEdgeStyle;rounded=1;endArrow=none;startArrow=none;html=1;strokeColor=#3B82F6;"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="dim_f" target="tp_f_001" style="edgeStyle=entityRelationEdgeStyle;rounded=1;endArrow=none;startArrow=none;html=1;strokeColor=#93C5FD;"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="dim_f" target="tp_f_002" style="edgeStyle=entityRelationEdgeStyle;rounded=1;endArrow=none;startArrow=none;html=1;strokeColor=#93C5FD;"><mxGeometry relative="1" as="geometry"/></mxCell>
       </root>
     </mxGraphModel>
   </diagram>
 </mxfile>
 ```
 
-要求：六维度中该需求涉及的都要建维度节点；每个测试点建独立节点并连到所属维度；节点文本以 `TP-ID` 开头，层级与 Mermaid 一致。
+要求：六维度中该需求涉及的都要建维度节点并配色；每个测试点建独立节点连到所属维度；所有 edge 必须 `endArrow=none`（无黑箭头）；节点文本以 `TP-ID` 开头，层级与 Mermaid 一致。交付前自检：在 drawio/飞书中打开确认是「思维导图树状彩色气泡」而非「黑箭头流程图」。
 
 ## 测试计划模板（可导入飞书在线文档的 `.md`）
 
@@ -116,6 +121,16 @@ wb.save("测试交付件-{需求名}-{日期}.xlsx")
 - 测试类型与分层：功能/接口/性能/兼容/安全/稳定/体验/专项如何分配
 - 设计方法：等价类/边界值/判定表/状态迁移/场景法/错误推测的使用场景
 - 专项测试方案（如有）：指标、采样量 N、统计口径、合格阈值
+- **按测试类型的优先级排序执行**：先保证「功能测试、接口测试」通过，再进入「性能测试、稳定性测试」，最后执行「专项测试」；前一阶段未通过（有阻塞级缺陷）不进入下一阶段。流程如下：
+
+```mermaid
+flowchart LR
+    A[功能测试 / 接口测试] -->|通过, 无阻塞缺陷| B[性能测试 / 稳定性测试]
+    B -->|通过, 无阻塞缺陷| C[专项测试<br/>指标采样统计]
+    C --> D[准出评审]
+    A -.阻塞缺陷.-> A
+    B -.阻塞缺陷.-> B
+```
 
 ## 3. 资源安排
 | 角色 | 人员 | 职责 |
@@ -137,9 +152,10 @@ wb.save("测试交付件-{需求名}-{日期}.xlsx")
 - 用例通过评审、Blocked/Draft 已清零
 
 ## 6. 准出标准
+- 用例执行率 100%
+- 无阻塞级缺陷
+- 遗留缺陷均已经过评审，且有处理结论或应对方案
 - 需求覆盖率、覆盖深度达标（硬门禁通过）
-- 用例可执行率 100%（无 Blocked/Draft）
-- 遗留缺陷在可接受范围、无阻塞级缺陷
 - 专项指标达标（如有）
 
 ## 7. 风险分析与应对
@@ -572,27 +588,33 @@ mindmap
 
 「质量审计报告」Sheet 统一按以下结构组织，**每个检查项既有表格数据、又有可视化图表**，并在 Sheet 顶部放一段**总说明**解释各部分作用。
 
-### 顶部总说明（必放，Sheet 开头）
+### 顶部报告说明（必放，Sheet 最上方，单独合并一列）
 
-用一段文字说明本报告四部分做什么：
+在 Sheet 最上方用**一个横向合并单元格**（合并覆盖整表宽度）放「报告说明」，标题 `报告说明`，正文按 **1./2./3./4./5. 编号逐项列出**（每项独立成行，**严禁用 `;`/`；` 分隔堆在一行**）：
 
-> **本报告说明**
-> - **覆盖率报告**：核对每条可测需求（REQ）是否被测试点和用例覆盖、覆盖深度是否达标，回答「测全了吗」。
-> - **可执行性报告**：统计用例的 Ready / Blocked / Draft 分布，回答「用例现在能不能执行」。
-> - **质量缺陷报告**：汇总反模式命中、追溯缺口、深度缺口等质量问题，回答「用例写得好不好」。
-> - **优先级合理性评估**：核对每条用例优先级定级是否与业务影响/风险一致、分布是否合理，回答「测试策略的资源投入对不对」。
-> - **硬门禁**：以上全部达标（各项归零/合规）才允许宣称「高质量最终版」，否则输出阻断项清单。
+```
+报告说明
+1. 覆盖率报告：核对每条可测需求（REQ）是否被测试点和用例覆盖、覆盖深度是否达标，回答「测全了吗」。
+2. 可执行性报告：统计用例的 Ready / Blocked / Draft 分布，回答「用例现在能不能执行」。
+3. 质量缺陷报告：汇总反模式命中、追溯缺口、深度缺口等质量问题，回答「用例写得好不好」。
+4. 优先级合理性评估：核对每条用例优先级定级是否与业务影响/风险一致、分布是否合理，回答「测试策略的资源投入对不对」。
+5. 硬门禁：以上全部达标（各项归零/合规）才允许宣称「高质量最终版」，否则输出阻断项清单。
+```
 
-### 图表要求（每个报告都要有）
+实现：飞书表格用合并单元格 + 单元格内换行（`\n`）逐条列出；`openpyxl` 用 `ws.merge_cells` 合并首行区域、`cell.alignment = Alignment(wrapText=True)` 开启自动换行，正文各项用 `\n` 连接。
 
-各报告在表格数据之外，须配至少一张可视化图表（飞书表格用 `lark-sheets` 图表；本地 openpyxl 用 `openpyxl.chart`）：
+### 图表要求（每个报告都要有，飞书 Sheet 与本地 Excel 均需生成）
 
-| 报告 | 建议图表 |
-|------|---------|
-| 覆盖率报告 | 覆盖率仪表/柱状（已覆盖 vs 未覆盖 vs N/A）、深度达标占比饼图 |
-| 可执行性报告 | Ready/Blocked/Draft 占比饼图或堆叠柱状 |
-| 质量缺陷报告 | 各缺陷类型数量柱状图 |
-| 优先级合理性评估 | 各优先级用例数量分布柱状图 + 不合理项数量 |
+各报告在表格数据之外，**飞书电子表格与本地 `.xlsx` 两套都必须内嵌可视化图表**（飞书表格用 `lark-sheets` 图表；本地 openpyxl 用 `openpyxl.chart`），两套图表类型一致：
+
+| 报告 | 图表 | 数据标签 |
+|------|------|---------|
+| 覆盖率报告 | 覆盖率柱状（已覆盖 vs 未覆盖 vs N/A）+ 深度达标占比饼图 | 饼图显示占比 xx% |
+| 可执行性报告 | **饼图**（Ready/Blocked/Draft 占比） | **必须显示占比 xx% 具体数据** |
+| 质量缺陷报告 | 各缺陷类型数量柱状图 | 显示数量 |
+| 优先级合理性评估 | **饼图**（各优先级 P0/P1/P2/P3 占比分布）+ 不合理项数量 | **必须显示占比 xx% 具体数据** |
+
+饼图数据标签实现：飞书图表开启数据标签并显示百分比；`openpyxl` 用 `openpyxl.chart.PieChart` + `DataLabelList(showPercent=True)`（如需同时显示数值可再置 `showVal=True`）。
 
 ### 覆盖率报告
 
@@ -630,7 +652,7 @@ mindmap
 |------|------|------|---------|
 | TC-XXX | Blocked | 依赖 Q3 未确认 | 产品确认 Q3 |
 ```
-（配图：Ready/Blocked/Draft 占比饼图）
+（配图：Ready/Blocked/Draft 占比饼图，显示占比 xx%；飞书 Sheet 与本地 Excel 均需生成）
 
 ### 质量缺陷报告
 
@@ -675,7 +697,7 @@ mindmap
 1. 每条用例「优先级评估」列必须有具体定级理由（结合业务影响/发生概率/可检测性≥两项），不得为空或只抄级别定义。
 2. 优先级须与风险等级一致：高↔P0/P1、中↔P2、低↔P3；错档即不合理。
 3. 分布须健康：P0 占比不宜过高（核心用例过多说明定级失焦）也不宜为 0（可能漏判关键路径）；异常分布需在报告中说明原因。
-（配图：各优先级数量分布柱状图 + 不合理项数量标注）
+（配图：各优先级 P0/P1/P2/P3 占比饼图，显示占比 xx% + 不合理项数量标注；飞书 Sheet 与本地 Excel 均需生成）
 
 ### 硬门禁判定
 
