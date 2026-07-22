@@ -5,12 +5,13 @@
 ## 交付形式
 
 - 所有交付件**独立分开**呈现（各占一个 Sheet），禁止把多种交付件合并混在同一张 Sheet。
-- **除测试点思维导图外**，其余交付件（需求清单、主表、附表、追溯表、专项测试用例、专项数据采集、质量审计）**最终交付必须是 Excel**，且统一组织为**同一个工作簿的多个 Sheet**（一件一 Sheet），**严禁用 `.md`/`.csv`/`.txt` 或对话内 Markdown 表格作正式交付**；Markdown 表格仅供预览。
-- **默认双份交付**：本地一个多 Sheet `.xlsx` + 飞书一个在线电子表格，两套内容/结构/命名一致，交付时同时给出本地路径与飞书链接（用户明确只要一种时除外）。
+- **表格类交付件**（需求清单、主表、附表、追溯表、专项测试用例、专项数据采集、质量审计）**最终交付必须是 Excel**，且统一组织为**同一个工作簿的多个 Sheet**（一件一 Sheet），**严禁用 `.md`/`.csv`/`.txt` 或对话内 Markdown 表格作正式交付**；Markdown 表格仅供预览。
+- **默认双份交付**：表格类交付件本地一个多 Sheet `.xlsx` + 飞书一个在线电子表格，两套内容/结构/命名一致，交付时同时给出本地路径与飞书链接（用户明确只要一种时除外）。
 - **交付件名称必须为中文**：文件名/Sheet 名用中文，如「测试用例主表」「评审追溯表（含风险评估）」「追溯矩阵表（REQ-TP-TC）」。
 - **每个 Excel 交付表必须**：首行表头加粗、表头带筛选下拉框、列宽按内容自适应（见下「Excel 交付件格式要求」）。
 - **必须产出真正的 `.xlsx` 二进制文件**：本地用 `openpyxl` 真实写盘、飞书用 lark-sheets 建真实表格，使用者可打开/编辑/保存；禁止把 Markdown/CSV 改后缀冒充。生成后告知实际保存路径或链接。
-- **测试点思维导图**单独交付为**可直接导入飞书在线思维导图（思维笔记）的缩进大纲文件**（Markdown 大纲 / OPML），模板见下「思维导图导入格式」。
+- **测试点思维导图**单独交付为 **Draw.io 文件（`.drawio`）**，可直接导入飞书云文档，模板见下「思维导图 Draw.io 格式」。
+- **测试计划**单独交付为 **Markdown（`.md`）文档**，可导入飞书在线文档，含范围目标/策略/资源/进度/准入准出/风险/缺陷流程（留白）/交付物清单，模板见下「测试计划模板」。
 - 交付清单与落表方式见 [SKILL.md](SKILL.md) 「交付物规范」。
 
 ## Excel 交付件格式要求
@@ -67,51 +68,97 @@ wb.save("测试交付件-{需求名}-{日期}.xlsx")
 
 > 飞书侧：切 `lark-sheets` 建一个电子表格，用同样的中文名建多个 Sheet 并写入同样内容，返回链接。默认本地与飞书两套都要生成。
 
-## 思维导图导入格式（可导入飞书在线思维导图）
+## 思维导图 Draw.io 格式（可导入飞书云文档）
 
-飞书思维笔记「导入」接受缩进大纲。交付时输出下列任一格式的独立文件，导入后即成在线思维导图。
+思维导图正式交付为 Draw.io 文件 `测试点思维导图.drawio`（mxGraphModel XML），飞书云文档/画板可直接导入。层级与 Mermaid 预览一致：根=需求名 → 维度（功能/性能/稳定性/兼容性/安全/用户体验）→ 测试点，每个测试点节点文本以 `TP-ID` 开头，保证可追溯回追溯表。
 
-**Markdown 大纲**（`测试点思维导图.md`）：根为需求名，逐级缩进为维度 → 测试点，节点文本带 `TP-ID`。
-
-```markdown
-# 【需求名称】
-- 功能
-  - TP-F-001 登录成功
-  - TP-F-002 登录失败-密码错误
-  - TP-F-010 空用户名提交
-- 性能
-  - TP-P-001 列表页 1000 条数据加载
-- 稳定性
-  - TP-S-001 网络中断后重试
-- 兼容性
-  - TP-C-001 Chrome 最新版
-- 安全
-  - TP-SEC-001 未登录访问受限接口
-- 用户体验
-  - TP-UX-001 错误提示文案清晰
-```
-
-**OPML**（`测试点思维导图.opml`，兼容性更强的大纲交换格式）：
+结构骨架（每个节点一个 `<mxCell vertex="1">`，父子用 `<mxCell edge="1" source=".." target="..">` 连线；`id` 唯一，`parent` 一般为 `"1"`）：
 
 ```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<opml version="2.0">
-  <head><title>【需求名称】测试点思维导图</title></head>
-  <body>
-    <outline text="【需求名称】">
-      <outline text="功能">
-        <outline text="TP-F-001 登录成功"/>
-        <outline text="TP-F-002 登录失败-密码错误"/>
-      </outline>
-      <outline text="性能">
-        <outline text="TP-P-001 列表页 1000 条数据加载"/>
-      </outline>
-    </outline>
-  </body>
-</opml>
+<mxfile host="app.diagrams.net">
+  <diagram name="测试点思维导图">
+    <mxGraphModel dx="800" dy="600" grid="0" fold="1" arrows="1" connect="1">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <!-- 根节点：需求名 -->
+        <mxCell id="root" value="【需求名称】" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="360" y="40" width="160" height="40" as="geometry"/></mxCell>
+        <!-- 维度节点 -->
+        <mxCell id="dim_f" value="功能" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="120" y="140" width="120" height="36" as="geometry"/></mxCell>
+        <!-- 测试点节点（文本以 TP-ID 开头） -->
+        <mxCell id="tp_f_001" value="TP-F-001 登录成功" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="40" y="220" width="200" height="36" as="geometry"/></mxCell>
+        <mxCell id="tp_f_002" value="TP-F-002 登录失败-密码错误" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="40" y="270" width="200" height="36" as="geometry"/></mxCell>
+        <!-- 连线：根→维度、维度→测试点 -->
+        <mxCell id="e1" edge="1" parent="1" source="root" target="dim_f"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="dim_f" target="tp_f_001"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="dim_f" target="tp_f_002"><mxGeometry relative="1" as="geometry"/></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
 ```
 
-要求：层级与 Mermaid 预览一致；每个测试点节点文本以 `TP-ID` 开头，保证可追溯回追溯表。
+要求：六维度中该需求涉及的都要建维度节点；每个测试点建独立节点并连到所属维度；节点文本以 `TP-ID` 开头，层级与 Mermaid 一致。
+
+## 测试计划模板（可导入飞书在线文档的 `.md`）
+
+正式交付一份 `测试计划.md`，用 Markdown 标题分节，飞书在线文档可直接导入。**缺陷管理流程**一节留白占位（后续手动贴链接/附件），其余各节结合本需求写实质内容。
+
+```markdown
+# 【需求名称】测试计划
+
+## 1. 测试范围与目标
+- 测试范围：本次覆盖的模块/功能/接口清单（对应已确认 REQ）
+- 不在范围：明确排除项
+- 测试目标：需求覆盖率、可执行率、质量门禁目标
+
+## 2. 测试策略与方案概述
+- 测试类型与分层：功能/接口/性能/兼容/安全/稳定/体验/专项如何分配
+- 设计方法：等价类/边界值/判定表/状态迁移/场景法/错误推测的使用场景
+- 专项测试方案（如有）：指标、采样量 N、统计口径、合格阈值
+
+## 3. 资源安排
+| 角色 | 人员 | 职责 |
+|------|------|------|
+| 测试负责人 | - | 计划/评审/发布决策 |
+| 测试执行 | - | 用例执行/缺陷跟踪 |
+| 环境/数据 | - | 环境准备、测试数据 |
+
+## 4. 进度计划
+| 阶段 | 时间 | 里程碑/交付物 |
+|------|------|--------------|
+| 用例设计 | - | 主表/附表/追溯表 |
+| 执行 | - | 执行结果、缺陷 |
+| 回归/验收 | - | 准出结论 |
+
+## 5. 准入标准
+- 需求/方案已确认，REQ 清单已冻结
+- 测试环境、账号、数据就绪
+- 用例通过评审、Blocked/Draft 已清零
+
+## 6. 准出标准
+- 需求覆盖率、覆盖深度达标（硬门禁通过）
+- 用例可执行率 100%（无 Blocked/Draft）
+- 遗留缺陷在可接受范围、无阻塞级缺陷
+- 专项指标达标（如有）
+
+## 7. 风险分析与应对
+| 风险 | 影响 | 概率 | 应对措施 |
+|------|------|------|---------|
+| 需求变更 | 高 | 中 | 冻结基线、变更走评审 |
+| 环境不稳定 | 中 | 中 | 备用环境、提前联调 |
+
+## 8. 缺陷管理流程
+> 待补充（后续手动贴上缺陷管理流程链接或附件）
+
+## 9. 交付物清单
+- 需求原子化清单（Excel）
+- 测试点思维导图（Draw.io）
+- 测试用例主表 / 评审追溯表（含风险评估）/ 追溯矩阵表（REQ-TP-TC）（Excel）
+- 专项测试用例表 / 专项数据采集表（如有，Excel）
+- 质量审计报告（Excel）
+- 本测试计划（Markdown）
+```
 
 ## 主表与附表
 
