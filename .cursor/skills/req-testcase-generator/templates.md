@@ -68,49 +68,58 @@ wb.save("测试交付件-{需求名}-{日期}.xlsx")
 
 > 飞书侧：切 `lark-sheets` 建一个电子表格，用同样的中文名建多个 Sheet 并写入同样内容，返回链接。默认本地与飞书两套都要生成。
 
+合并单元格/顶部说明行（openpyxl）：需求清单顶部输入来源行、附表的需求/测试点列、追溯矩阵的 REQ-ID/TP-ID 列、审计报告顶部说明，都用 `ws.merge_cells('A1:<末列>1')` 合并并 `cell.alignment = Alignment(wrapText=True, vertical='center')` 换行居中；相同值的连续数据行用 `ws.merge_cells(start_row=.., end_row=.., start_column=.., end_column=..)` 归组。
+
 ## 思维导图 Draw.io 格式（完全适配飞书在线思维导图）
 
-思维导图正式交付为 Draw.io 文件 `测试点思维导图.drawio`（mxGraphModel XML）。**必须使用飞书在线思维导图的树状模板样式，不能是普通流程图**——否则导入飞书后会呈现为「一堆黑色箭头指向节点」，视觉很差。适配要点（强制）：
+思维导图正式交付为 Draw.io 文件，**命名为 `XX项目测试点`**（如 `咖啡机项目饮品APP测试点.drawio`，即「项目/需求名 + 测试点」，不要用「测试点思维导图」这类通用名）。
 
-1. **用思维导图树布局，不是有向流程图**：`mxGraphModel` 设 `arrows="0"`；根节点用 `treeRoot=1`，整体作为一棵思维导图树。
-2. **连线无箭头、平滑分支线**：每条 edge 样式用 `edgeStyle=entityRelationEdgeStyle;rounded=1;endArrow=none;startArrow=none;html=1;`（`endArrow=none` 去掉黑色箭头，改成飞书思维导图那种圆滑分支线）。
-3. **节点用圆角气泡 + 分维度配色**（不要默认黑框白底）：根节点、各维度、各维度下测试点分别用不同 `fillColor`/`strokeColor`，如功能=蓝、性能=橙、稳定性=绿、兼容性=青、安全=红、用户体验=紫。
-4. 层级与 Mermaid 一致：根=需求名 → 维度 → 测试点，测试点节点文本以 `TP-ID` 开头，可追溯回追溯表。
+飞书导入后连线错乱、全是黑箭头，根因是：edge 用了带箭头的流程图样式、节点坐标手工摆放互相交叉、没有从左到右规整的树布局。适配要点（强制）：
 
-结构骨架（`arrows="0"`、edge 无箭头、节点带配色）：
+1. **左向右树布局，节点不重叠**：根在最左（列 x≈40），维度在中列（x≈300），测试点在右列（x≈560）；同层节点按 `y` 依次错开、每个节点独占一行高度（如行距 ≥60），**严禁多个节点坐标重叠**，否则连线必乱。
+2. **分支线用正交圆角、无箭头、有方向**：edge 样式统一 `edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;`（从父节点右侧中点出、进子节点左侧中点，走飞书思维导图那种横向分支线，不产生黑箭头也不交叉）。
+3. **一个父节点的所有子节点，其 `y` 范围应围绕父节点 `y` 上下分布**（父居中、子上下展开），避免所有线挤向一点。
+4. **节点圆角气泡 + 分维度配色**：根=深色、功能=蓝、性能=橙、稳定性=绿、兼容性=青、安全=红、用户体验=紫；测试点用对应维度浅色。
+5. 层级与 Mermaid 一致：根=需求名 → 维度 → 测试点，测试点文本以 `TP-ID` 开头，可追溯回追溯表。
+
+结构骨架（左→右树布局、正交无箭头分支线、坐标不重叠）：
 
 ```xml
 <mxfile host="app.diagrams.net">
-  <diagram name="测试点思维导图">
-    <mxGraphModel dx="800" dy="600" grid="0" fold="1" arrows="0" connect="1">
+  <diagram name="咖啡机项目饮品APP测试点">
+    <mxGraphModel dx="1200" dy="800" grid="0" fold="1" arrows="0" connect="1">
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <!-- 根节点：需求名（思维导图根，圆角气泡） -->
-        <mxCell id="root" value="【需求名称】" style="rounded=1;whiteSpace=wrap;html=1;treeRoot=1;fillColor=#111827;fontColor=#FFFFFF;strokeColor=none;" vertex="1" parent="1"><mxGeometry x="360" y="40" width="180" height="44" as="geometry"/></mxCell>
-        <!-- 维度节点（按维度配色） -->
-        <mxCell id="dim_f" value="功能" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#3B82F6;" vertex="1" parent="1"><mxGeometry x="120" y="140" width="120" height="40" as="geometry"/></mxCell>
-        <!-- 测试点节点（文本以 TP-ID 开头，浅色气泡） -->
-        <mxCell id="tp_f_001" value="TP-F-001 登录成功" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#93C5FD;" vertex="1" parent="1"><mxGeometry x="40" y="220" width="200" height="40" as="geometry"/></mxCell>
-        <mxCell id="tp_f_002" value="TP-F-002 登录失败-密码错误" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#93C5FD;" vertex="1" parent="1"><mxGeometry x="40" y="270" width="200" height="40" as="geometry"/></mxCell>
-        <!-- 分支线：无箭头、圆滑（飞书思维导图样式） -->
-        <mxCell id="e1" edge="1" parent="1" source="root" target="dim_f" style="edgeStyle=entityRelationEdgeStyle;rounded=1;endArrow=none;startArrow=none;html=1;strokeColor=#3B82F6;"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e2" edge="1" parent="1" source="dim_f" target="tp_f_001" style="edgeStyle=entityRelationEdgeStyle;rounded=1;endArrow=none;startArrow=none;html=1;strokeColor=#93C5FD;"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e3" edge="1" parent="1" source="dim_f" target="tp_f_002" style="edgeStyle=entityRelationEdgeStyle;rounded=1;endArrow=none;startArrow=none;html=1;strokeColor=#93C5FD;"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <!-- 根（最左，纵向居中） -->
+        <mxCell id="root" value="咖啡机项目饮品APP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#111827;fontColor=#FFFFFF;strokeColor=none;" vertex="1" parent="1"><mxGeometry x="40" y="200" width="180" height="44" as="geometry"/></mxCell>
+        <!-- 维度（中列，纵向错开不重叠） -->
+        <mxCell id="dim_f" value="功能" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#3B82F6;" vertex="1" parent="1"><mxGeometry x="300" y="120" width="120" height="40" as="geometry"/></mxCell>
+        <mxCell id="dim_p" value="性能" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEDD5;strokeColor=#F97316;" vertex="1" parent="1"><mxGeometry x="300" y="280" width="120" height="40" as="geometry"/></mxCell>
+        <!-- 测试点（右列，围绕父节点上下分布） -->
+        <mxCell id="tp_f_001" value="TP-F-001 下单成功" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#93C5FD;" vertex="1" parent="1"><mxGeometry x="560" y="80" width="220" height="40" as="geometry"/></mxCell>
+        <mxCell id="tp_f_002" value="TP-F-002 支付失败提示" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#93C5FD;" vertex="1" parent="1"><mxGeometry x="560" y="150" width="220" height="40" as="geometry"/></mxCell>
+        <mxCell id="tp_p_001" value="TP-P-001 出杯响应≤3s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#FDBA74;" vertex="1" parent="1"><mxGeometry x="560" y="280" width="220" height="40" as="geometry"/></mxCell>
+        <!-- 分支线：正交圆角、无箭头、父右→子左 -->
+        <mxCell id="e1" edge="1" parent="1" source="root" target="dim_f" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#3B82F6;"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="root" target="dim_p" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#F97316;"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="dim_f" target="tp_f_001" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#93C5FD;"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="dim_f" target="tp_f_002" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#93C5FD;"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e5" edge="1" parent="1" source="dim_p" target="tp_p_001" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#FDBA74;"><mxGeometry relative="1" as="geometry"/></mxCell>
       </root>
     </mxGraphModel>
   </diagram>
 </mxfile>
 ```
 
-要求：六维度中该需求涉及的都要建维度节点并配色；每个测试点建独立节点连到所属维度；所有 edge 必须 `endArrow=none`（无黑箭头）；节点文本以 `TP-ID` 开头，层级与 Mermaid 一致。交付前自检：在 drawio/飞书中打开确认是「思维导图树状彩色气泡」而非「黑箭头流程图」。
+要求：`<diagram name>` 用「XX项目测试点」命名；所有 edge 用上述正交无箭头样式且 `exit/entry` 固定为父右→子左；节点坐标从左到右分列、同列纵向错开不重叠；子节点围绕父节点上下展开。交付前自检：在 drawio/飞书打开确认连线不交叉、无黑箭头、呈横向树状。
 
 ## 测试计划模板（可导入飞书在线文档的 `.md`）
 
-正式交付一份 `测试计划.md`，用 Markdown 标题分节，飞书在线文档可直接导入。**缺陷管理流程**一节留白占位（后续手动贴链接/附件），其余各节结合本需求写实质内容。
+正式交付一份 Markdown 文件，**命名为 `XX项目测试计划`**（如 `咖啡机项目饮品APP测试计划.md`，与思维导图同用「项目/需求名」前缀）。用 Markdown 标题分节，飞书在线文档可直接导入。**缺陷管理流程**一节留白占位（后续手动贴链接/附件），其余各节结合本需求写实质内容。
 
 ```markdown
-# 【需求名称】测试计划
+# XX项目测试计划（如：咖啡机项目饮品APP测试计划）
 
 ## 1. 测试范围与目标
 - 测试范围：本次覆盖的模块/功能/接口清单（对应已确认 REQ）
@@ -118,16 +127,23 @@ wb.save("测试交付件-{需求名}-{日期}.xlsx")
 - 测试目标：需求覆盖率、可执行率、质量门禁目标
 
 ## 2. 测试策略与方案概述
-- 测试类型与分层：功能/接口/性能/兼容/安全/稳定/体验/专项如何分配
-- 设计方法：等价类/边界值/判定表/状态迁移/场景法/错误推测的使用场景
-- 专项测试方案（如有）：指标、采样量 N、统计口径、合格阈值
-- **按测试类型的优先级排序执行**：先保证「功能测试、接口测试」通过，再进入「性能测试、稳定性测试」，最后执行「专项测试」；前一阶段未通过（有阻塞级缺陷）不进入下一阶段。流程如下：
+
+| 项 | 内容 |
+|----|------|
+| 测试类型与分层 | 功能/接口/性能/兼容/安全/稳定/体验/专项如何分配 |
+| 设计方法 | 等价类/边界值/判定表/状态迁移/场景法/错误推测的使用场景 |
+| 执行顺序 | 功能/接口测试 → 性能/稳定性测试 → 专项测试 → 回归测试（前一阶段有阻塞级缺陷不进入下一阶段） |
+| 专项测试方案（如有） | 指标、采样量 N、统计口径、合格阈值 |
+| 回归测试 | 所有测试项完成且 BUG 收敛后进行，主要覆盖 P0 与部分 P1 用例 |
+
+**按测试类型的优先级排序执行**：先保证功能/接口测试通过，再进入性能/稳定性测试，然后专项测试；全部完成且缺陷收敛后进入回归测试。流程如下：
 
 ```mermaid
 flowchart LR
     A[功能测试 / 接口测试] -->|通过, 无阻塞缺陷| B[性能测试 / 稳定性测试]
     B -->|通过, 无阻塞缺陷| C[专项测试<br/>指标采样统计]
-    C --> D[准出评审]
+    C -->|全部完成, BUG 收敛| E[回归测试<br/>P0 + 部分 P1]
+    E --> D[准出评审]
     A -.阻塞缺陷.-> A
     B -.阻塞缺陷.-> B
 ```
@@ -143,8 +159,11 @@ flowchart LR
 | 阶段 | 时间 | 里程碑/交付物 |
 |------|------|--------------|
 | 用例设计 | - | 主表/附表/追溯表 |
-| 执行 | - | 执行结果、缺陷 |
-| 回归/验收 | - | 准出结论 |
+| 功能/接口执行 | - | 执行结果、缺陷 |
+| 性能/稳定性执行 | - | 执行结果、缺陷 |
+| 专项测试（如有） | - | 专项数据采集统计 |
+| 回归测试 | - | BUG 收敛后回归 P0+部分 P1，回归结论 |
+| 验收/准出 | - | 准出结论 |
 
 ## 5. 准入标准
 - 需求/方案已确认，REQ 清单已冻结
@@ -186,6 +205,16 @@ flowchart LR
 ## REQ 原子化清单
 
 在生成测试点之前，必须先输出 `REQ` 原子化清单，作为覆盖率计算与双向追溯的唯一基础。
+
+**顶部输入来源行（强制）**：Sheet 最上方用**一行横向合并单元格**，附上本次输入的需求文档、设计稿、原型、技术方案文档的**链接**（每类一行或用换行分隔，注明类型）。**仅当输入是链接时才附**；若输入是本地文档（非链接），此行留空或写「本地文档，无链接」，不强制贴路径。
+
+```
+输入来源
+需求文档：https://...
+设计稿：https://...
+原型：https://...
+技术方案：https://...
+```
 
 | REQ-ID | 需求描述 | 来源文档 | 来源章节/段落 | 类型 | 可测性 | 覆盖状态 | 备注 |
 |--------|---------|---------|--------------|------|--------|---------|------|
@@ -337,13 +366,19 @@ mindmap
 
 ### 附表（评审追溯表）
 
-| 用例序号 | 关联需求/方案条目 | 关联测试点 | 设计技法 | 测试数据 | 风险等级 | 风险评估依据 | 优先级评估 | 用例状态 | 解除条件 | 备注 |
-|---------|------------------|-----------|---------|---------|---------|-------------|-----------|---------|---------|-----|
+列顺序固定为**需求/方案条目 → 测试点 → 用例序号**在前，直观展现「每条需求→一个或多个测试点→每个测试点一条或多条用例」的层级：
+
+| 关联需求/方案条目 | 关联测试点 | 用例序号 | 设计技法 | 测试数据 | 风险等级 | 风险评估依据 | 优先级评估 | 用例状态 | 解除条件 | 备注 |
+|------------------|-----------|---------|---------|---------|---------|-------------|-----------|---------|---------|-----|
+
+> **合并单元格（强制）**：同一「关联需求/方案条目」的多行合并该列单元格；同一「关联测试点」的多行合并该列单元格（飞书用合并单元格；`openpyxl` 用 `ws.merge_cells`）。使一条需求下的多个测试点、一个测试点下的多条用例在视觉上归组，更直观。
 
 ### 追溯矩阵
 
 | REQ-ID | TP-ID | TC-ID | 覆盖类型 | 备注 |
 |--------|------|------|---------|------|
+
+> **合并单元格（强制）**：相同 `REQ-ID` 的连续多行合并 REQ-ID 列；相同 `TP-ID` 的连续多行合并 TP-ID 列（飞书合并单元格；`openpyxl` 用 `ws.merge_cells`），使 `REQ → TP → TC` 的一对多层级更直观。
 
 ### 填写规范
 
@@ -361,8 +396,9 @@ mindmap
 
 | 列 | 规范 |
 |----|------|
-| 关联需求/方案条目 | 优先写 `REQ-ID`，可附章节名 |
-| 关联测试点 | 对应 `TP-*` 编号，可多项 |
+| 关联需求/方案条目 | **第一列**，优先写 `REQ-ID`，可附章节名；同一条目跨多行合并单元格 |
+| 关联测试点 | **第二列**，对应 `TP-*` 编号；同一测试点跨多行合并单元格 |
+| 用例序号 | **第三列**，对应 `TC-*` 编号，与主表一一对应 |
 | 设计技法 | 等价类 / 边界值 / 判定表 / 状态迁移 / 场景法 / 错误推测（含义见下「设计技法说明」） |
 | 测试数据 | 必须给出具体值，不可写“合法数据” |
 | 风险等级 | 高 / 中 / 低（与主表 P0-P3 对应） |
@@ -438,7 +474,7 @@ mindmap
 | 专项指标 | 被统计的指标名，如「避障成功率」「OCR 识别准确率」 |
 | 场景/维度 | 数据分层的维度，如「白天/夜间」「静态/动态障碍物」「距离 0.5m/1m/2m」；一条用例只固定一组场景/维度 |
 | 单次操作步骤 | 编号列表，描述**一次**采样如何执行，可逐步复现 |
-| 单次判定标准 | 单次结果如何判「成功/失败」（可观测、可判定），如「机器人在障碍物前 ≥30cm 停止或绕行记为成功」 |
+| 单次判定标准 | 单次结果如何判 `PASS`/`FAIL`（可观测、可判定），如「机器人在障碍物前 ≥30cm 停止或绕行记为 PASS」 |
 | 采样次数 N | 该场景下重复执行的次数，须为具体数字（如 50、100），不可写「多次」 |
 | 统计口径 | 汇总公式，如 `成功率 = 成功次数 / N`、`平均误差 = Σ误差 / N`、`P95 耗时` |
 | 合格阈值 | 判定该指标通过的门槛，须含比较符与具体值，如 `≥ 95%`、`≤ 3cm`、`≥ 98%` |
@@ -449,20 +485,24 @@ mindmap
 
 | 序次 | 输入/条件 | 单次结果（原始值） | 单次判定 | 备注 |
 |------|----------|------------------|---------|------|
-| 1 | ... | ... | 成功/失败 | ... |
-| 2 | ... | ... | 成功/失败 | ... |
+| 1 | ... | ... | PASS/FAIL | ... |
+| 2 | ... | ... | PASS/FAIL | ... |
 | ... | ... | ... | ... | ... |
-| N | ... | ... | 成功/失败 | ... |
+| N | ... | ... | PASS/FAIL | ... |
+
+> 「单次判定」列**只允许填 `PASS` 或 `FAIL`**。
 
 汇总行（表末固定）：
 
 | 汇总项 | 值 |
 |-------|----|
 | 采样次数 N | 100 |
-| 成功次数 | 96 |
+| PASS 次数 | 96 |
 | 统计结果 | 成功率 96% |
 | 合格阈值 | ≥ 95% |
-| 结论 | 达标 / 不达标 |
+| 结论 | PASS / FAIL |
+
+> 「结论」列**只允许填 `PASS`（达标）或 `FAIL`（不达标）**。
 
 规则：
 1. 专项用例的附表（评审追溯表）与追溯矩阵仍需覆盖，`覆盖类型` 填「专项」，`设计技法` 可填「场景法 / 正交实验 / 分层抽样」
@@ -487,24 +527,24 @@ mindmap
 
 | 用例序号 | 优先级 | 专项指标 | 场景/维度 | 前置条件 | 单次操作步骤 | 单次判定标准 | 采样次数 N | 统计口径 | 合格阈值 |
 |---------|-------|---------|----------|---------|-------------|-------------|-----------|---------|---------|
-| TC-SP-OBST-001 | P0 | 避障成功率 | 静态障碍物·光照正常 | 1. 整机固件 `v2.3.0`<br>2. 标准测试场地，静态障碍物（纸箱 40cm）置于路径中点 | 1. 机器人从起点 A 沿预设路径行驶至终点 B<br>2. 记录是否碰撞障碍物 | 未接触障碍物且到达 B 记为成功；发生碰撞记为失败 | 100 | 成功率 = 成功次数 / 100 | ≥ 98% |
-| TC-SP-OCR-001 | P0 | 识别准确率 | 印刷体·标准光照 | 1. 识别服务 `v1.5`<br>2. 标注好的印刷体样本集 500 张 | 1. 逐张送入识别接口<br>2. 比对识别结果与标注真值 | 识别结果与真值完全一致记为正确 | 500 | 准确率 = 正确数 / 500 | ≥ 99% |
+| TC-SP-OBST-001 | P0 | 避障成功率 | 静态障碍物·光照正常 | 1. 整机固件 `v2.3.0`<br>2. 标准测试场地，静态障碍物（纸箱 40cm）置于路径中点 | 1. 机器人从起点 A 沿预设路径行驶至终点 B<br>2. 记录是否碰撞障碍物 | 未接触障碍物且到达 B 记为 PASS；发生碰撞记为 FAIL | 100 | 成功率 = PASS 次数 / 100 | ≥ 98% |
+| TC-SP-OCR-001 | P0 | 识别准确率 | 印刷体·标准光照 | 1. 识别服务 `v1.5`<br>2. 标注好的印刷体样本集 500 张 | 1. 逐张送入识别接口<br>2. 比对识别结果与标注真值 | 识别结果与真值完全一致记为 PASS，否则 FAIL | 500 | 准确率 = PASS 数 / 500 | ≥ 99% |
 
 采集表（对应 TC-SP-OBST-001，节选）：
 
 | 序次 | 输入/条件 | 单次结果（原始值） | 单次判定 | 备注 |
 |------|----------|------------------|---------|------|
-| 1 | 纸箱 40cm@中点 | 绕行通过，最近距离 32cm | 成功 | - |
-| 2 | 纸箱 40cm@中点 | 轻微剐蹭 | 失败 | 转向偏晚 |
+| 1 | 纸箱 40cm@中点 | 绕行通过，最近距离 32cm | PASS | - |
+| 2 | 纸箱 40cm@中点 | 轻微剐蹭 | FAIL | 转向偏晚 |
 | ... | ... | ... | ... | ... |
 
 | 汇总项 | 值 |
 |-------|----|
 | 采样次数 N | 100 |
-| 成功次数 | 98 |
+| PASS 次数 | 98 |
 | 统计结果 | 成功率 98% |
 | 合格阈值 | ≥ 98% |
-| 结论 | 达标 |
+| 结论 | PASS |
 
 ---
 
@@ -519,11 +559,13 @@ mindmap
 | TC-LOGIN-005 | P1 | Chrome 最新版可完成登录主流程 | 兼容性测试 | 1. Chrome 最新稳定版<br>2. 账号 `test_user` 可用 | 1. 在 Chrome 中执行 TC-LOGIN-001 步骤 | 与 TC-LOGIN-001 预期结果一致 |
 | TC-LOGIN-006 | P0 | 未登录访问个人中心被拦截 | 安全测试 | 1. 浏览器无登录态 Cookie/Token | 1. 直接访问 `/profile` | 1. 跳转 `/login`<br>2. 页面不展示用户隐私字段 |
 
-| 用例序号 | 关联需求/方案条目 | 关联测试点 | 设计技法 | 测试数据 | 风险等级 | 风险评估依据 | 优先级评估 | 用例状态 | 解除条件 | 备注 |
-|---------|------------------|-----------|---------|---------|---------|-------------|-----------|---------|---------|-----|
-| TC-LOGIN-001 | REQ-001 | TP-F-001 | 场景法 | 用户名 `test_user`，密码 `Pass@123` | 高 | 业务影响高（登录不可用阻塞主流程）；发生概率中（高频入口） | P0：登录是核心主流程，失败即阻塞发布，业务影响高、高频触发 | Ready | 无 | 对应主表 P0 |
-| TC-LOGIN-002 | REQ-001 | TP-F-002 | 错误推测 | 密码 `Wrong@001` | 中 | 业务影响中；发生概率高 | P1：重要负向分支，高频发生但不阻塞主流程 | Ready | 无 | 反向覆盖 |
-| TC-LOGIN-003 | REQ-003 | TP-F-020 | 边界值 | 连续错误 5 次、6 次 | 中 | 业务影响中；可检测性高 | P2：安全边界场景，触发频率较低、影响中等 | Blocked | 产品确认锁定策略 Q1 | 深度覆盖边界 |
+（`REQ-001` 跨两行合并、其下 `TP-F-001`/`TP-F-002` 各自成组）
+
+| 关联需求/方案条目 | 关联测试点 | 用例序号 | 设计技法 | 测试数据 | 风险等级 | 风险评估依据 | 优先级评估 | 用例状态 | 解除条件 | 备注 |
+|------------------|-----------|---------|---------|---------|---------|-------------|-----------|---------|---------|-----|
+| REQ-001 | TP-F-001 | TC-LOGIN-001 | 场景法 | 用户名 `test_user`，密码 `Pass@123` | 高 | 业务影响高（登录不可用阻塞主流程）；发生概率中（高频入口） | P0：登录是核心主流程，失败即阻塞发布，业务影响高、高频触发 | Ready | 无 | 对应主表 P0 |
+| REQ-001 | TP-F-002 | TC-LOGIN-002 | 错误推测 | 密码 `Wrong@001` | 中 | 业务影响中；发生概率高 | P1：重要负向分支，高频发生但不阻塞主流程 | Ready | 无 | 反向覆盖 |
+| REQ-003 | TP-F-020 | TC-LOGIN-003 | 边界值 | 连续错误 5 次、6 次 | 中 | 业务影响中；可检测性高 | P2：安全边界场景，触发频率较低、影响中等 | Blocked | 产品确认锁定策略 Q1 | 深度覆盖边界 |
 
 | REQ-ID | TP-ID | TC-ID | 覆盖类型 | 备注 |
 |--------|------|------|---------|------|
@@ -541,6 +583,8 @@ mindmap
 - **P1 / 中高风险**：高频核心路径、关键分支、严重体验缺陷
 - **P2 / 中风险**：次要路径、边界与一般异常
 - **P3 / 低风险**：低频功能、轻微体验或优化项
+
+**优先级分布建议比例（结合实际情况调整）**：主表用例整体应大致按 **P0 ≈ 10%、P1 ≈ 40%、P2 ≈ 40%、P3 ≈ 10%** 划分，避免 P0 过多导致资源失焦或全堆 P2 无重点。设计主表时即按此比例分配优先级；实际因需求特性偏离时，须在质量审计「优先级合理性评估」中说明原因。
 
 建议评估维度：
 
@@ -609,7 +653,7 @@ mindmap
 
 | 报告 | 图表 | 数据标签 |
 |------|------|---------|
-| 覆盖率报告 | 覆盖率柱状（已覆盖 vs 未覆盖 vs N/A）+ 深度达标占比饼图 | 饼图显示占比 xx% |
+| 覆盖率报告 | **饼图**（已覆盖 vs 未覆盖 vs N/A）+ 深度达标占比饼图 | **两个饼图均显示占比 xx%** |
 | 可执行性报告 | **饼图**（Ready/Blocked/Draft 占比） | **必须显示占比 xx% 具体数据** |
 | 质量缺陷报告 | 各缺陷类型数量柱状图 | 显示数量 |
 | 优先级合理性评估 | **饼图**（各优先级 P0/P1/P2/P3 占比分布）+ 不合理项数量 | **必须显示占比 xx% 具体数据** |
@@ -633,7 +677,7 @@ mindmap
 |--------|---------|-------------|---------|
 | REQ-00X | 深度未达标 | 反向/边界 | 补充对应 TC |
 ```
-（配图：覆盖率柱状 + 深度达标占比饼图）
+（配图：覆盖率饼图（已覆盖/未覆盖/N-A 占比，显示 xx%）+ 深度达标占比饼图，显示 xx%；飞书 Sheet 与本地 Excel 均需生成）
 
 ### 可执行性报告
 
@@ -682,9 +726,19 @@ mindmap
 - 用例总数：X
 - 各优先级数量：P0 X / P1 X / P2 X / P3 X
 - 各优先级占比：P0 X% / P1 X% / P2 X% / P3 X%
+- 建议比例：P0 10% / P1 40% / P2 40% / P3 10%
+- 与建议比例偏差：P0 ±X% / P1 ±X% / P2 ±X% / P3 ±X%（明显偏离须说明原因）
 - 优先级缺依据数（附表「优先级评估」列为空/仅抄级别定义）：X
 - 优先级与风险不一致数（如标 P0 但风险等级为低）：X
 - 定级不合理数：X
+
+### 优先级分布对照
+| 优先级 | 实际数量 | 实际占比 | 建议占比 | 偏差 |
+|-------|---------|---------|---------|------|
+| P0 | X | X% | 10% | ±X% |
+| P1 | X | X% | 40% | ±X% |
+| P2 | X | X% | 40% | ±X% |
+| P3 | X | X% | 10% | ±X% |
 
 ### 不合理项清单
 | TC-ID | 当前优先级 | 风险等级 | 问题 | 建议优先级 | 理由 |
@@ -696,8 +750,8 @@ mindmap
 判定基准（不满足即计入「定级不合理数」）：
 1. 每条用例「优先级评估」列必须有具体定级理由（结合业务影响/发生概率/可检测性≥两项），不得为空或只抄级别定义。
 2. 优先级须与风险等级一致：高↔P0/P1、中↔P2、低↔P3；错档即不合理。
-3. 分布须健康：P0 占比不宜过高（核心用例过多说明定级失焦）也不宜为 0（可能漏判关键路径）；异常分布需在报告中说明原因。
-（配图：各优先级 P0/P1/P2/P3 占比饼图，显示占比 xx% + 不合理项数量标注；飞书 Sheet 与本地 Excel 均需生成）
+3. 分布须贴近建议比例 **P0 10% / P1 40% / P2 40% / P3 10%**（结合实际微调）；明显偏离（如 P0 远超 10%、P2 接近 100%）须在报告中说明原因，否则视为定级不合理。
+（配图：各优先级 P0/P1/P2/P3 占比饼图，显示占比 xx% + 叠加建议比例对照；飞书 Sheet 与本地 Excel 均需生成）
 
 ### 硬门禁判定
 
