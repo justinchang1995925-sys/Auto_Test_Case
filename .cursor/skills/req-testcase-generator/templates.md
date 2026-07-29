@@ -782,6 +782,7 @@ mindmap
 只有以下条件全部满足，才可宣称“高质量最终版”：
 
 - [ ] 未覆盖 REQ 数 = 0（由「可测REQ全集 − 追溯矩阵REQ集合」差集算得，非肉眼核对）
+- [ ] REQ 清单结构性完整（来源章节漏拆 = 0、REQ 断号/重号 = 0、字段缺失/非法 = 0、分母口径自洽）——见 4.1.1 A 组，语义性 B 组候选仅列入待人工确认、不阻断
 - [ ] 深度未达标 REQ 数 = 0（每个功能 REQ 的覆盖类型标签同时含正向类与非正向类）
 - [ ] Blocked 用例数 = 0
 - [ ] Draft 用例数 = 0
@@ -802,6 +803,9 @@ mindmap
 ```
 自查口径（本次审计如何算出）：
 - 未覆盖 REQ 数 = 可测REQ全集(N) − 追溯矩阵出现的REQ集合 → 差集 { } → 0
+- 来源章节漏拆数 = 输入文档章节全集 − REQ「来源章节」集合 → 差集 { } → 0（REQ 全集完整性，非下游覆盖）
+- REQ 断号/重号 = 遍历 REQ-NNN 序号，缺号/重复者 → { } → 0
+- 疑似未拆需求候选数 = 扫描文档信号句中未被任何 REQ 引用者 → { N 条 }（软提示，需人工确认，不阻断）
 - 深度未达标数 = 遍历每个功能REQ的覆盖类型标签，缺正向类或缺非正向类者 → { } → 0
 - 一对多坍缩数 = 对每条TC统计其被引用的TP集合与REQ集合，任一 >1 者 → { } → 0
 - 反模式命中数 = 逐条比对每用例步骤条数与预期条数，不等者 → { } → 0
@@ -884,5 +888,66 @@ def audit(REQ_ROWS, TC_ROWS, TR_ROWS, i_type, i_testable):
 #       并在自查回执写明各数的算法。全部为空才可标「高质量最终版」。
 ```
 
-脚本只是参考骨架；关键是**每个门禁数都由这样的集合运算/遍历得出，并把违例 ID 如实列出**，而不是手填 0。
+### REQ 清单完整性核对（4.1.1）
+
+审计 REQ 全集本身是否覆盖全。A 组为结构性硬门禁（确定性集合运算），B 组为语义性召回（仅列候选，不阻断）。约定：`DOC_SECTIONS` = 从输入文档抽取的章节号全集（标题层级）；`i_src_sec` = REQ 行中「来源章节/段落」列索引；`i_cover` = 「覆盖状态」列索引；`DOC_TEXT` = 输入文档纯文本。
+
+```python
+import re, collections
+
+def audit_req_completeness(REQ_ROWS, DOC_SECTIONS, i_type, i_testable,
+                           i_src_sec, i_cover, DOC_TEXT=""):
+    # ---- A 组：结构性完整（硬门禁） ----
+    # A1 来源章节反查差集：有章节但无任何 REQ 引用 → 疑似整节漏拆
+    covered_sec = set(str(r[i_src_sec]).strip() for r in REQ_ROWS)
+    section_gap = [s for s in DOC_SECTIONS if s not in covered_sec]
+
+    # A2 编号连续性：断号 + 重号
+    nums = [int(m.group(1)) for r in REQ_ROWS
+            for m in [re.search(r"REQ-(\d+)", r[0])] if m]
+    dup  = [n for n, c in collections.Counter(nums).items() if c > 1]
+    missing = [n for n in range(1, (max(nums) if nums else 0) + 1) if n not in nums]
+
+    # A3 必填字段 + 枚举合法
+    field_bad = []
+    for r in REQ_ROWS:
+        ok_testable = r[i_testable] in ("可测", "不可测")
+        ok_cover    = r[i_cover] in ("待覆盖", "阻塞", "N/A")
+        if not (str(r[i_src_sec]).strip() and str(r[i_type]).strip()
+                and ok_testable and ok_cover):
+            field_bad.append(r[0])
+
+    # A4 分母口径自洽：可测 + 不可测 == 总数
+    n_total = len(REQ_ROWS)
+    n_ok    = sum(1 for r in REQ_ROWS if r[i_testable] in ("可测", "不可测"))
+    denom_ok = (n_ok == n_total)
+
+    # ---- B 组：语义性召回（软提示，仅候选） ----
+    # B1 需求信号句扫描：命中信号词却未被任何 REQ 描述引用 → 疑似未拆
+    signals = ("必须", "应", "需", "支持", "不允许", "禁止", "否则",
+               "默认", "最多", "至少", "当")
+    req_desc = " ".join(str(c) for r in REQ_ROWS for c in r)
+    suspect_sentences = []
+    for line in re.split(r"[。\n]", DOC_TEXT):
+        s = line.strip()
+        if s and any(k in s for k in signals) and s[:12] not in req_desc:
+            suspect_sentences.append(s)   # 需人工确认，非自动判定
+
+    return {
+        # A 组（硬门禁，全部须为空/True）
+        "来源章节漏拆": section_gap,
+        "REQ重号": dup,
+        "REQ断号": missing,
+        "字段缺失/非法REQ": field_bad,
+        "分母口径自洽": denom_ok,
+        # B 组（软提示，仅供人工确认，不阻断）
+        "疑似未拆需求候选": suspect_sentences,
+    }
+
+# A 组任一非空（或分母不自洽）即阻断，违例逐条列 ID/章节号并写口径；
+# B 组只把候选数计入「待人工确认数」，报告须标注「召回不保证穷尽，需人工确认」，
+# 严禁据 B 组为空就宣称「REQ 全集已完整」。
+```
+
+脚本只是参考骨架；关键是**每个门禁数都由这样的集合运算/遍历得出，并把违例 ID 如实列出**，而不是手填 0。**特别提醒**：4.1 的未覆盖差集只证明「已拆 REQ 被覆盖」，REQ 全集是否拆全须另跑上面的 `audit_req_completeness`——A 组入硬门禁，B 组仅辅助召回。
 
