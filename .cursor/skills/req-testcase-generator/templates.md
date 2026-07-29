@@ -781,17 +781,34 @@ mindmap
 
 只有以下条件全部满足，才可宣称“高质量最终版”：
 
-- [ ] 未覆盖 REQ 数 = 0
-- [ ] 深度未达标 REQ 数 = 0
+- [ ] 未覆盖 REQ 数 = 0（由「可测REQ全集 − 追溯矩阵REQ集合」差集算得，非肉眼核对）
+- [ ] 深度未达标 REQ 数 = 0（每个功能 REQ 的覆盖类型标签同时含正向类与非正向类）
 - [ ] Blocked 用例数 = 0
 - [ ] Draft 用例数 = 0
-- [ ] 反模式命中数 = 0
+- [ ] 反模式命中数 = 0（含步骤/预期条数不等，逐条实测非印象）
 - [ ] 追溯缺口数 = 0
 - [ ] TP 无 REQ 关联数 = 0
+- [ ] 一对多坍缩数 = 0（① 多 TP 共用一条 TC；② 多 REQ 共用一条 TC；③ 矩阵归属与 TC 字段不一致，三者均为 0）
+- [ ] TP 无专属 TC 数 = 0
 - [ ] 优先级缺依据数 = 0
 - [ ] 优先级定级不合理数 = 0
 
-若任一条件不满足，必须输出阻断项清单，不得宣称“100% 覆盖”或“100% 可执行”。
+**每一项的数字必须附计算口径（见下「自查回执」），>0 项必须在缺陷清单列出违例 ID。** 若任一条件不满足，必须输出阻断项清单，不得宣称“100% 覆盖”或“100% 可执行”。
+
+### 自查回执（必放在审计报告底部）
+
+用一段文本逐条写清每个门禁数的算法与结果，让数字可复核（示例）：
+
+```
+自查口径（本次审计如何算出）：
+- 未覆盖 REQ 数 = 可测REQ全集(N) − 追溯矩阵出现的REQ集合 → 差集 { } → 0
+- 深度未达标数 = 遍历每个功能REQ的覆盖类型标签，缺正向类或缺非正向类者 → { } → 0
+- 一对多坍缩数 = 对每条TC统计其被引用的TP集合与REQ集合，任一 >1 者 → { } → 0
+- 反模式命中数 = 逐条比对每用例步骤条数与预期条数，不等者 → { } → 0
+- Ready/Blocked/Draft = 直接取附表「用例状态」列计数（非口算）
+```
+
+数字与回执对不上，即视为审计无效，必须重算后重出报告。
 
 ---
 
@@ -806,3 +823,66 @@ mindmap
 | Q3 | 登录接口 P95 响应时间 SLA 是多少？ | 技术方案 4.2 性能指标 | 影响性能测试用例阈值 | 产品/开发 |
 | Q4 | 需兼容哪些浏览器及最低版本？ | 文档未提及 | 影响兼容性测试矩阵 | 产品/开发 |
 | Q5 | Session 有效期多长？是否支持「记住我」？ | PRD 2.1 与 技术方案 4.3 表述不一致 | 影响安全与稳定性用例 | 产品/开发 |
+
+---
+
+## 审计核对脚本（参考，强烈建议执行）
+
+Phase 4 的门禁数字必须来自对数据的真实遍历（见 SKILL.md「审计三铁律」）。以下参考脚本以「需求清单 / 追溯矩阵 / 用例表」为输入，一次算出全部门禁数并列出违例 ID。执行者应据实调整字段索引，用它的输出填审计报告，而非肉眼判断。这正是能抓出「整条 REQ 遗漏」「多 REQ 共用一条 TC」「深度只有单方向」等隐蔽缺陷的可靠方法。
+
+```python
+# 审计核对脚本（参考）：输入三份数据，输出全部门禁数 + 违例 ID 清单
+# 约定：
+#   REQ_ROWS[i] = [REQ-ID, ..., 类型, 可测性, 覆盖状态, ...]
+#   TC_ROWS[i]  = [TC-ID, 优先级, 标题, 类型, 前置, 步骤, 预期, REQ-ID, TP-ID, ...]
+#   TR_ROWS[i]  = [REQ-ID, TP-ID, TC-ID, 覆盖类型, 备注]
+import collections
+
+def audit(REQ_ROWS, TC_ROWS, TR_ROWS, i_type, i_testable):
+    testable = [r[0] for r in REQ_ROWS if r[i_testable] == "可测"]
+    is_func  = {r[0]: ("功能" in r[i_type]) for r in REQ_ROWS}
+
+    # 1) 未覆盖差集（抓整条遗漏，如某 V2.0 功能从未建 TP/TC）
+    req_in_tr = set(r[0] for r in TR_ROWS)
+    uncovered = [rid for rid in testable if rid not in req_in_tr]
+
+    # 2) 覆盖深度：功能 REQ 的覆盖类型标签须同时含正向类与非正向类
+    tags = collections.defaultdict(list)
+    for r in TR_ROWS:
+        tags[r[0]].append(r[3])
+    def pos(t): return ("正" in t) or ("主" in t)
+    def neg(t): return ("反" in t) or ("异" in t) or ("边" in t)
+    deep_bad = [rid for rid in testable if is_func[rid]
+                and not (any(pos(t) for t in tags[rid]) and any(neg(t) for t in tags[rid]))]
+    # 续见下一段 →
+```
+```python
+    # 3) 坍缩双向 + 字段一致性
+    tc_tps  = collections.defaultdict(set)   # TC -> 引用它的 TP 集合
+    tc_reqs = collections.defaultdict(set)   # TC -> 引用它的 REQ 集合
+    for r in TR_ROWS:
+        tc_tps[r[2]].add(r[1]); tc_reqs[r[2]].add(r[0])
+    collapse_tp  = [tc for tc, s in tc_tps.items()  if len(s) > 1]   # 多 TP 共用
+    collapse_req = [tc for tc, s in tc_reqs.items() if len(s) > 1]   # 多 REQ 共用（对称另一半）
+    tc_self = {r[0]: (r[7], r[8]) for r in TC_ROWS}                  # TC 自身字段 (REQ, TP)
+    field_bad = [r[2] for r in TR_ROWS
+                 if r[2] in tc_self and tc_self[r[2]] != (r[0], r[1])]
+
+    # 4) 反模式：步骤条数 != 预期条数
+    antipat = [r[0] for r in TC_ROWS if r[5].count("\n") != r[6].count("\n")]
+
+    return {
+        "未覆盖REQ": uncovered,
+        "深度未达标REQ": deep_bad,
+        "坍缩-多TP共用TC": collapse_tp,
+        "坍缩-多REQ共用TC": collapse_req,
+        "字段不一致TC": field_bad,
+        "反模式TC": antipat,
+    }
+
+# 用法：把返回的每个列表长度填入门禁数，非空列表逐条填入缺陷清单，
+#       并在自查回执写明各数的算法。全部为空才可标「高质量最终版」。
+```
+
+脚本只是参考骨架；关键是**每个门禁数都由这样的集合运算/遍历得出，并把违例 ID 如实列出**，而不是手填 0。
+
