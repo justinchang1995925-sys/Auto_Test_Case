@@ -1,0 +1,15 @@
+# Skill 单一真源在 .agents/skills/，改动只改那里。
+# 下面两路都是 Windows junction 指向真源，而 git 会「穿透 junction 记录文件内容」
+# （不存链接本身），若一并入库等于同一份 skill 在仓库里存三份，且日后极易分叉。
+# 因此只把 .agents/ 入库，这两路仅作本地挂载点。
+.claude/skills/
+.cursor/skills/
+
+# Python 字节码（跑管道自检时生成，可再生）
+__pycache__/
+*.pyc
+
+# 交付件产物（由 scripts/project_template/build.py 生成，不入库）
+测试交付件-*.xlsx
+*测试点.drawio
+.feishu_csv/
