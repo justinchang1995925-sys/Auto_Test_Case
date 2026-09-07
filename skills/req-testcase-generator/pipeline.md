@@ -19,24 +19,36 @@
 
 ## 快速开始
 
+设 `$SKILL` 为本 skill 目录（例如 `D:/P_TestCase/skills/req-testcase-generator`）：
+
 ```bash
 # 1. 复制模板到项目目录
-cp <skill>/scripts/project_template/*.py ./
+cp $SKILL/scripts/project_template/*.py ./
 
-# 2. 改数据层：reqs.py（REQ清单）、cases_demo.py（用例，可拆多个）、
+# 2. 告诉脚本去哪找 tcgen（项目不在 skill 仓库内时需要这一步）
+echo "D:/P_TestCase/skills/req-testcase-generator" > .tcgen_home
+
+# 3. 改数据层：reqs.py（REQ清单）、cases_demo.py（用例，可拆多个）、
 #    d_ex_demo.py（EX矩阵+文档章节全集）、spec.py（专项两表）
 #    改 build.py 顶部 CONFIG：PROJECT / DATE / EXTRA_TP
 
-# 3. 构建（产出 xlsx + drawio，并打印硬门禁结论）
+# 4. 构建（产出 xlsx + drawio，并打印硬门禁结论）
 python build.py
 
-# 4. 飞书同步（先在飞书建表并把 sheet_id 回填 sync_feishu.py）
+# 5. 飞书同步（先在飞书建表并把 sheet_id 回填 sync_feishu.py）
 python sync_feishu.py export    # 导出同源 CSV，核对行列数与 sheet_id
 python sync_feishu.py all       # 重建格式 + 重建饼图
 ```
 
-`_boot.py` 负责定位 skill 的 `scripts/` 目录（环境变量 `TCGEN_HOME` → 逐级向上找
-`.claude/skills/...` → 用户级 `~/.claude/...`），项目脚本无需关心绝对路径。
+`_boot.py` 负责定位 skill 的 `scripts/` 目录，按以下顺序查找，命中即止：
+
+1. 环境变量 `TCGEN_HOME`（指向 skill 目录或其 `scripts` 目录，两者都接受）
+2. 当前目录或任一祖先目录下的 `.tcgen_home` 文件，内容为 skill 路径
+3. 逐级向上试 `skills/`、`.claude/skills/`、`.cursor/skills/`、`.agents/skills/` 各种布局
+   —— 项目建在 skill 仓库内时（第 3 条的 `skills/`）无需任何配置即可命中
+4. 用户级 `~/.claude/skills/`、`~/.cursor/skills/`
+
+四条都没命中时报错并列出三种可选修复方式，不会静默失败。
 
 ## 模块职责
 
@@ -97,8 +109,11 @@ REQ 清单结构性完整（章节反查差集、编号连续、字段枚举、�
 
 ## 自检
 
-模板自带一份门禁全通过的样例数据。管道改动后跑一遍，应输出「硬门禁: 全部通过」：
+模板自带一份门禁全通过的样例数据。管道改动后跑一遍，应输出「硬门禁: 全部通过」。
+在 skill 仓库内建临时目录即可，`_boot.py` 会自动向上找到 `skills/` 布局，无需配置：
 
 ```bash
-mkdir /tmp/t && cp <skill>/scripts/project_template/*.py /tmp/t/ && cd /tmp/t && python build.py
+cd <仓库根>                 # 例如 D:/P_TestCase
+mkdir -p _selftest && cp skills/req-testcase-generator/scripts/project_template/*.py _selftest/
+cd _selftest && python build.py && cd .. && rm -rf _selftest
 ```

@@ -110,31 +110,52 @@ Phase 4    质量审计（四报告 + 硬门禁）
 
 ## 目录结构
 
-Skill 采用**单一真源 + junction** 布局：`.agents/skills/` 是唯一一份真实内容，
-`.cursor/`、`.claude/` 及用户级目录均为 junction 指向它，任一处编辑都直接落到真源。
+本仓库是这套 Skill 的唯一来源，全部内容都是普通文件和目录——没有符号链接、没有
+Windows junction，克隆下来即可直接使用。
 
 ```text
 .
 ├── README.md
-├── REQ-TESTCASE-SKILL-ARCHITECTURE.md
+├── REQ-TESTCASE-SKILL-ARCHITECTURE.md   # 架构与流程总览
 ├── skills-lock.json                     # 27 个 lark-* skill 的来源存档
-├── .agents/skills/                      # ← 真源（唯一真实内容）
-│   ├── req-testcase-generator/
-│   │   ├── SKILL.md                     # 流程与门禁规范（主文件）
-│   │   ├── templates.md                 # 输出模板与维度检查清单
-│   │   ├── exception-library.md          # 通用异常注入库（EX）与交叉选点规则
-│   │   ├── doc-ingest.md                # 文档摄入说明
-│   │   ├── pipeline.md                  # 交付件构建管道用法与易错点
-│   │   └── scripts/
-│   │       ├── tcgen/                   # 构建层+同步层，照搬不改
-│   │       └── project_template/         # 项目侧模板，复制后只改数据层
-│   └── lark-*/                          # 27 个飞书 skill
-├── .cursor/skills/  → junction 至 .agents/skills/（Cursor 编辑入口）
-└── .claude/skills/  → junction 至 .agents/skills/（Claude Code 加载）
+└── skills/
+    ├── req-testcase-generator/          # ← 本项目核心 Skill
+    │   ├── SKILL.md                     # 流程与门禁规范（主文件）
+    │   ├── templates.md                 # 输出模板与维度检查清单
+    │   ├── exception-library.md         # 通用异常注入库（EX）与交叉选点规则
+    │   ├── doc-ingest.md                # 文档摄入说明
+    │   ├── pipeline.md                  # 交付件构建管道用法与易错点
+    │   └── scripts/
+    │       ├── tcgen/                   # 构建层+同步层，照搬不改
+    │       └── project_template/        # 项目侧模板，复制后只改数据层
+    └── lark-*/                          # 27 个飞书 skill（供飞书交付步骤调用）
 ```
 
-用户级 `%USERPROFILE%\.claude\skills\` 同样 junction 至真源，
-因此**任何目录下的新项目都能用到最新 Skill**。
+### 在自己的项目中使用
+
+**方式一：让 agent 直接按路径读取（本地最省事，始终是最新版）**
+
+对 Claude Code / Cursor 说：
+
+```text
+读 D:\P_TestCase\skills\req-testcase-generator\SKILL.md，按它给这份需求生成测试用例
+```
+
+**方式二：装成 Skill（让 agent 自动识别，无需每次指路）**
+
+把 Skill 目录复制到项目级或用户级 skills 目录：
+
+```powershell
+# 项目级：只在该项目可用
+Copy-Item D:\P_TestCase\skills\req-testcase-generator <你的项目>\.claude\skills\ -Recurse
+
+# 用户级：所有项目都可用
+Copy-Item D:\P_TestCase\skills\req-testcase-generator $env:USERPROFILE\.claude\skills\ -Recurse
+```
+
+Cursor 把上面的 `.claude` 换成 `.cursor`。飞书交付步骤要用到 `lark-*` 时同样复制过去。
+
+> 方式二是快照：本仓库更新后需重新复制。想始终跟最新用方式一。
 
 ## 使用方式
 
@@ -166,11 +187,14 @@ Skill 采用**单一真源 + junction** 布局：`.agents/skills/` 是唯一一�
 
 交付件由 Skill 自带管道生成，**禁止现场重写**建表、审计运算、思维导图与飞书同步代码：
 
+`$SKILL` 为本 skill 目录（如 `D:/P_TestCase/skills/req-testcase-generator`）：
+
 ```bash
-cp <skill>/scripts/project_template/*.py ./   # 1. 复制模板到项目目录
-# 2. 只改数据层 reqs.py / cases_*.py / d_ex_*.py / spec.py，与 build.py 顶部 CONFIG
-python build.py                                # 3. 产出 xlsx + drawio，并打印硬门禁结论
-python sync_feishu.py all                      # 4. 飞书格式与饼图重建（先回填 sheet_id）
+cp $SKILL/scripts/project_template/*.py ./     # 1. 复制模板到项目目录
+echo "$SKILL" > .tcgen_home                    # 2. 指明 skill 位置（项目在本仓库内可省）
+# 3. 只改数据层 reqs.py / cases_*.py / d_ex_*.py / spec.py，与 build.py 顶部 CONFIG
+python build.py                                # 4. 产出 xlsx + drawio，并打印硬门禁结论
+python sync_feishu.py all                      # 5. 飞书格式与饼图重建（先回填 sheet_id）
 ```
 
 ## 关键文件说明

@@ -1,7 +1,7 @@
 # req-testcase-generator Skill 总览文档
 
 > 本文档随 Skill 演进同步更新，最后一次重写：2026-09-07（新增交付件构建管道、EX 异常注入库、
-> 功能安全门禁、审计三铁律，并更新文件位置为「单一真源 + junction」布局）。
+> 功能安全门禁、审计三铁律；Skill 收敛为「本仓库唯一来源、无链接、可直接分发」布局）。
 
 ## 1. 文档目的
 
@@ -478,12 +478,15 @@ Phase 4 在「质量审计报告」Sheet 强制输出（含顶部总说明，每
 
 ### 10.2 交付件落地（Phase 3/4，强制复用管道）
 
+`$SKILL` 为本 skill 目录（如 `D:/P_TestCase/skills/req-testcase-generator`）：
+
 ```bash
-cp <skill>/scripts/project_template/*.py ./   # 1. 复制模板到项目目录
-# 2. 只改数据层 reqs.py / cases_*.py / d_ex_*.py / spec.py，与 build.py 顶部 CONFIG
-python build.py                                # 3. 产出 xlsx + drawio，并打印硬门禁结论
-python sync_feishu.py export                   # 4. 导出同源 CSV，核对行列数与 sheet_id
-python sync_feishu.py all                      # 5. 飞书格式与饼图重建
+cp $SKILL/scripts/project_template/*.py ./     # 1. 复制模板到项目目录
+echo "$SKILL" > .tcgen_home                    # 2. 指明 skill 位置（项目在本仓库内可省）
+# 3. 只改数据层 reqs.py / cases_*.py / d_ex_*.py / spec.py，与 build.py 顶部 CONFIG
+python build.py                                # 4. 产出 xlsx + drawio，并打印硬门禁结论
+python sync_feishu.py export                   # 5. 导出同源 CSV，核对行列数与 sheet_id
+python sync_feishu.py all                      # 6. 飞书格式与饼图重建
 ```
 
 管道自带一份门禁全通过的样例数据，改动管道后跑一遍应输出「硬门禁: 全部通过」。
@@ -512,38 +515,55 @@ python sync_feishu.py all                      # 5. 飞书格式与饼图重建
 
 ## 11. 文件位置与维护建议
 
-### 11.1 单一真源 + junction 布局（2026-09-07 确立）
+### 11.1 唯一来源：本仓库（2026-09-07 确立）
 
-**唯一一份真实内容**（改动只改这里，或经任一 junction 改，等效）：
+Skill 的全部内容都在本仓库里，**普通文件和目录，无符号链接、无 Windows junction**，
+克隆下来即可直接使用，也便于上传 GitHub 供第三方下载：
 
 ```
-D:\P_TestCase\.agents\skills\req-testcase-generator\
-  SKILL.md              流程与门禁规范（主文件）
-  templates.md          输出模板与维度检查清单
-  exception-library.md  通用异常注入库（EX）与交叉选点规则
-  doc-ingest.md         文档摄入详解
-  pipeline.md           交付件构建管道用法与易错点
-  scripts/tcgen/        构建层 + 同步层（dsl/audit/xlsx/drawio/feishu），照搬不改
-  scripts/project_template/  项目侧模板，复制后只改数据层
+<仓库根>/                        本地为 D:\P_TestCase
+  README.md
+  REQ-TESTCASE-SKILL-ARCHITECTURE.md   本文档
+  skills-lock.json                     27 个 lark-* 的来源存档
+  skills/
+    req-testcase-generator/
+      SKILL.md              流程与门禁规范（主文件）
+      templates.md          输出模板与维度检查清单
+      exception-library.md  通用异常注入库（EX）与交叉选点规则
+      doc-ingest.md         文档摄入详解
+      pipeline.md           交付件构建管道用法与易错点
+      scripts/tcgen/        构建层 + 同步层（dsl/audit/xlsx/drawio/feishu），照搬不改
+      scripts/project_template/   项目侧模板，复制后只改数据层
+    lark-*/                 27 个飞书 skill（飞书交付步骤会用到）
 ```
 
-其余 4 处均为 Windows **junction** 指向真源，任一处编辑都直接落到真源，不会再分叉：
+### 11.2 在其他项目中使用
 
-| 挂载点 | 用途 |
-|--------|------|
-| `D:\P_TestCase\.cursor\skills\` | Cursor 编辑入口 |
-| `D:\P_TestCase\.claude\skills\` | P_TestCase 项目级 |
-| `D:\Cc_Project\.claude\skills\` | Cc_Project 项目级 |
-| `%USERPROFILE%\.claude\skills\` | **用户级，任何目录任何项目都可用**（新项目靠此兜底） |
+**方式一：按路径读取（本地推荐，始终是最新版）**
 
-27 个 `lark-*` skill 同样从 `.agents/skills/` junction 到用户级，
-因此换项目后飞书交付仍能按 skill 走。
+对 agent 说「读 `D:\P_TestCase\skills\req-testcase-generator\SKILL.md`，按它生成测试用例」。
+不复制、不安装，仓库改了立即生效。
 
-> 历史坑位：早先 `.cursor`（Cursor 编辑）与 `.claude`（Claude Code 加载）两份真实副本并存且不同步，
-> `.claude` 那份停在 2026-07-17，缺失审计三铁律 / 功能安全 / EX 交叉矩阵全部新门禁——
-> 交付件看着正常，实际漏了整类检查。junction 化即为根治该问题。
+**方式二：装成 Skill（让 agent 自动识别）**
 
-### 11.2 维护策略
+把 `skills/req-testcase-generator` 复制到项目级 `.claude/skills/`（或 `.cursor/skills/`），
+或用户级 `%USERPROFILE%\.claude\skills\`（所有项目可用）。
+飞书交付步骤要用到 `lark-*` 时一并复制。
+
+> 方式二是快照，仓库更新后需重新复制；想始终跟最新用方式一。
+
+**管道脚本如何找到 `tcgen`**：`_boot.py` 按 `TCGEN_HOME` 环境变量 → 项目里的
+`.tcgen_home` 文件 → 逐级向上试 `skills/`、`.claude/skills/`、`.cursor/skills/`、
+`.agents/skills/` → 用户级目录，四类共同兜底。项目建在本仓库内时零配置即可命中；
+项目在别处时，在项目目录放一个 `.tcgen_home` 写上 skill 路径最省事（换机器只改这一个文件）。
+四类都未命中会报错并列出修复方式，不会静默失败。
+
+> 历史坑位（勿重犯）：早先 Cursor 与 Claude Code 各持一份真实副本且不同步，
+> 后者停在 2026-07-17，缺失审计三铁律 / 功能安全 / EX 交叉矩阵全部新门禁——
+> 交付件看着正常，实际漏了整类检查。**任何时候都只维护本仓库这一份**，
+> 其他位置只允许是从这里复制出去的快照，且复制后要记得同步更新。
+
+### 11.3 维护策略
 
 - **流程或门禁变更**：先改 `SKILL.md`，再同步本总览文档
 - **表结构 / 字段校验规则变更**：改 `templates.md`
@@ -553,4 +573,6 @@ D:\P_TestCase\.agents\skills\req-testcase-generator\
 - **管道代码变更**：改 `scripts/tcgen/`，然后跑模板自检确认「硬门禁: 全部通过」；
   **严禁把项目专有常量写进 `tcgen/`**
 - **文档内引用其他 skill**：用纯 skill 名（如 `` `lark-sheets` skill ``），
-  不要写 `../../../` 相对路径——那种路径只在原目录树下有效，跨挂载点即失效
+  不要写 `../../../` 相对路径——那种路径换个安装位置就失效
+- **文档内示例路径**：用 `$SKILL` 占位或写清「本地为 D:\P_TestCase」，
+  避免把某台机器的绝对路径写死进规则正文

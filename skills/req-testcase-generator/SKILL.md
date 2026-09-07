@@ -40,11 +40,14 @@ Phase 4  质量审计（四报告 + 硬门禁）
 Phase 3/4 落地交付件时**必须复用 `scripts/` 下的现成管道**，详见 [pipeline.md](pipeline.md)。
 **禁止**现场重写 openpyxl 建表、审计集合运算、drawio 拼 XML、飞书格式与图表重建这些代码。
 
+`$SKILL` 为本 skill 目录（如 `D:/P_TestCase/skills/req-testcase-generator`）：
+
 ```bash
-cp <skill>/scripts/project_template/*.py ./   # 1. 复制模板到项目目录
-# 2. 只改数据层 reqs.py / cases_*.py / d_ex_*.py / spec.py，与 build.py 顶部 CONFIG
-python build.py                                # 3. 产出 xlsx + drawio，并打印硬门禁结论
-python sync_feishu.py all                      # 4. 飞书格式与饼图重建（先回填 sheet_id）
+cp $SKILL/scripts/project_template/*.py ./     # 1. 复制模板到项目目录
+echo "$SKILL" > .tcgen_home                    # 2. 指明 skill 位置（项目在 skill 仓库内可省）
+# 3. 只改数据层 reqs.py / cases_*.py / d_ex_*.py / spec.py，与 build.py 顶部 CONFIG
+python build.py                                # 4. 产出 xlsx + drawio，并打印硬门禁结论
+python sync_feishu.py all                      # 5. 飞书格式与饼图重建（先回填 sheet_id）
 ```
 
 分层原则：**数据层**（REQ 正文、用例正文、飞书 token、业务阈值）每个项目重写，这是测试设计
