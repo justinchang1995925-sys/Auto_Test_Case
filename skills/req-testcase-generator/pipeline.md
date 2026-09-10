@@ -19,14 +19,17 @@
 
 ## 快速开始
 
-设 `$SKILL` 为本 skill 目录（例如 `D:/P_TestCase/skills/req-testcase-generator`）：
+设 `$SKILL` 为本 skill 目录（Windows 如 `D:/P_TestCase/skills/req-testcase-generator`，
+Ubuntu 如 `~/P_TestCase/skills/req-testcase-generator`）。
+**管道本身跨平台**，Windows 与 Ubuntu 用同一套命令，差异只在下面第 2 步的路径写法：
 
 ```bash
 # 1. 复制模板到项目目录
 cp $SKILL/scripts/project_template/*.py ./
 
 # 2. 告诉脚本去哪找 tcgen（项目不在 skill 仓库内时需要这一步）
-echo "D:/P_TestCase/skills/req-testcase-generator" > .tcgen_home
+echo "D:/P_TestCase/skills/req-testcase-generator" > .tcgen_home     # Windows
+echo "$HOME/P_TestCase/skills/req-testcase-generator" > .tcgen_home  # Ubuntu
 
 # 3. 改数据层：reqs.py（REQ清单）、cases_demo.py（用例，可拆多个）、
 #    d_ex_demo.py（EX矩阵+文档章节全集）、spec.py（专项两表）
@@ -57,8 +60,9 @@ python sync_feishu.py all       # 重建格式 + 重建饼图
 | `tcgen/dsl.py` | 用例数据模型 `add()`；步骤:预期=1:1 构建期 assert；优先级→风险/定级依据映射；维度映射表；各表表头 | 不改 |
 | `tcgen/audit.py` | 全部门禁的集合运算 + 违例 ID；`compute()` 返回门禁 dict，`gates()` 逐项通过判定，`gate_notes()` 数据派生说明 | 不改 |
 | `tcgen/xlsx.py` | 8 个 Sheet 的建表与样式；三表统一按 `(REQ,TP,TC)` 排序；REQ/TP 列层级合并；审计报告全文 + 6 个饼图 | 不改 |
-| `tcgen/drawio.py` | 六维度配色与左→右树布局，正交无箭头，坐标按块居中 | 不改 |
+| `tcgen/drawio.py` | 层次 需求→维度→〔模块〕→测试点→测试用例；六维度配色与左→右树布局，正交无箭头，叶子驱动、父节点按子块居中。`group_min=12` 触发模块层（防大维度标签跑出屏幕），`module_names=` 给模块中文名，`tp_names=` 覆盖测试点名称，`extra_cases=` 挂不在 CASES 里的用例（如专项），`dedupe_titles` 处理 TC 与 TP 同文，`show_cases=False` 退回三级。`build()` 出 `.drawio`（导入飞书云文档）、`mermaid()` 出 `.mmd`（写入飞书画板），两者共用 `derive()` 与 `_mod_id()` | 不改 |
 | `tcgen/feishu.py` | CSV 导出、格式重建、饼图重建 | 不改 |
+| `tcgen/plat.py` | 平台适配：lark-cli 定位（`TCGEN_LARK_CLI` → PATH）、缺 CLI 的报错修法、中文输出编码按需切换。**只放 OS 差异，不放业务逻辑** | 不改 |
 | `project_template/reqs.py` | REQ 清单、输入来源、专项 REQ 集合、审计报告说明 | **重写** |
 | `project_template/cases_demo.py` | 全部测试用例 | **重写** |
 | `project_template/d_ex_demo.py` | EX 交叉矩阵 + `DOC_SECTIONS`/`SECTION_NA` | **重写** |
@@ -102,6 +106,83 @@ REQ 清单结构性完整（章节反查差集、编号连续、字段枚举、�
 **飞书图表 refs 是写死行号，每次必须删旧图重建**。审计表新增门禁行后 G/H 辅助块
 整体下移，旧图会指向错误区域。行号由 `parse_chart_blocks()` 从 CSV 真实解析，不手填。
 
+**思维导图必须出到用例层，且大维度必须再分模块**。父节点摆在其整个子块的垂直中心，
+某维度独占大半 TP 时（实测功能维度 56/79）子块高 4500px，维度标签被推到屏幕外——
+现象是「维度丢了、直接显示 TP-TC」，但查 `mind_map.parent_id` 树会发现节点都在，
+**是布局问题不是数据问题**，别去改数据。`group_min=12` + `module_names=`（中文）解决。
+
+**空白饼图有三种成因，其中一种不是故障**。① 引用地址错位（改了报告行数）；
+② 数值格存成文本；③ **该块合计本来就是 0**（如零缺陷）。三者在页面上长得一模一样，
+所以第③种不画饼图、改写结论文本（A 方案），让「零缺陷」和「图表坏了」可区分。
+**不要塞占位 `1` 凑整圆**——那是往报告里写不真实的计数。判据是
+`parse_chart_blocks` 返回的 `total`；`rebuild_charts` 对 `total==0` 的块写文本并
+标 `kind='note'`；`diff_charts` 把这类块排除在 missing 外，但归零块上遗留的旧图
+会进 `extra`。
+
+**渲染层格位不参与数据比对，否则是永久假差异**。审计报告的 2×3 tile（`CHART_TILES`
+= J1/P1/J16/P16/J31/P31）要么被饼图对象盖住，要么写着零数据的结论文本——这些内容
+**不来自 CSV**，本地 CSV 只有 A–H 八列，而 `diff_sheets` 默认读到线上 P 列。
+实测：结论文本写在线上 P16 后，`diff` 每次都报一条 `(16,16)` 的差异，谁也修不掉。
+修法是 `diff_sheets(..., tile_sheet=AUDIT_SHEET_NAME)` 把这些格位交给 `diff_charts`
+检查——**一个格子只能有一个检查者**。屏蔽必须精确到格：屏蔽整行会连同行的真差异
+一起放过，从「误报」滑到更糟的「漏报」。
+
+**生成侧（xlsx）不要往单元格写这行结论文本**。xlsx 的格子会随 `export_csv` 流进 CSV，
+而线上那行文本由 `rebuild_charts` 写在渲染层 tile，两边地址不同，写了就又造出一条
+假差异。本地读者仍看得清：紧邻的 G/H 辅助块把几个 0 逐行列在原处。
+
+**修 bug 要修 `tcgen/` 里的共享实现，不是项目里的那份副本**。实测踩过两次，
+第二次是这轮审计才发现的：A 方案（零合计不画图）当时只改了某项目本地的
+`build_xlsx.py`，而**新项目实际调用的是 `tcgen/xlsx.py:add_pies`**——那份没改，
+新项目跑起来照旧画出空白饼图，等于这条教训根本没沉淀。
+**判据**：修完问， 「新项目从零跑一遍，会不会再中一次？」——若答案取决于某个项目目录里的
+文件，就是没修完。落地顺序固定为 ①改 `tcgen/` 共享实现 → ②加回归测试 → ③故障注入
+验证测试真能抓住回退 → ④`grep` 确认没有第二份副本还在用旧逻辑。
+
+**项目侧脚本必须是薄封装，不许抄一份建图实现**。实测踩过：`charts_feishu.py` 曾是
+完整的重复实现（自己写死 TILES、自己拼 chart-create），skill 加了 A 方案后它照旧建
+6 个图——跑一次就把空白饼图重新造回来。文案与格位的唯一来源是 `feishu.zero_note`
+和 `feishu.CHART_TILES`，两侧共用；各写一份，只要差一个字就是永久假差异。
+
+**前两种坏法都不会被数据比对发现**。① 改了审计报告的行数：饼图引用绝对地址，
+增删一行就让 G/H 辅助块位移而引用不动，饼图全指向空白区，修法是 `sync_feishu.py charts`
+按 CSV 真实行号重建。② 数值格存成了文本：整表推送时把每格都 `str()` 一遍，H 列的
+`67` 成了 `'67'`，此时引用地址全对、图表对象都在，饼图照样空白，**重建图表治不了**，
+必须把数值格重写成数字。两者的共同陷阱是所有常规检查都说没问题——数据逐格比对一致
+（`_norm_cell` 把 `67` 和 `'67'` 都归一化成 `"67"`，类型信息被抹掉）、图表对象还在、
+辅助数据肉眼看也对。`sync_feishu.py diff` 已内置 `diff_charts`，三项都空才算健康。
+**整表推送时数值列要保持原生类型，只对文本列做 `str()`。**
+
+**模块顺序按最小 TP 号排，跨模块 TP 按多数归属**。按用例数排序会让 `TP-F-001` 开头的模块掉到
+中间；跨模块 TP 取「首条用例」会判给号段不相干的模块，连带整块顺序错位（实测 `TP-F-041`）。
+两者都会让评审时导图顺序与 TP 编号对不上。`test_drawio_group.py` 的 `t_module_order`
+与 `t_attribution_majority` 专盯这两条，已用故障注入验证抓得住。
+
+**模块节点 id 别用维度名拼**：中文经 `[^0-9A-Za-z_]→_` 清洗后变成 `mod____0`，
+不同维度同序号组会撞 id。用 `_mod_id(dims, d, gi)`，drawio 与 mermaid 共用。
+
+**飞书画板不认 `.drawio`**，只能走 `mermaid()` 出 `.mmd` 再经 whiteboard-cli 转 openapi。
+`--overwrite` 会清空画板，写前先 `+query --output_as raw` 备份；写后必须回读复验，
+**本地 PNG 通过不代表画板通过**（两者布局引擎不同）。
+
+**跨平台：绝对路径一律不写死，改用 `tcgen.plat`**。实测踩过：`feishu.py` 里
+`DEFAULT_LARK_CLI` 曾写死 `C:/Users/<某个用户名>/AppData/Roaming/npm/lark-cli.cmd`。
+换机器（换用户名、或换到 Ubuntu）后**全部飞书函数一律 FileNotFoundError，而本地
+xlsx/drawio 照常产出**——现象是「交付件都出来了，只有飞书没连上」，很容易当成网络或
+授权问题查半天。现由 `plat.lark_cli()` 按 `TCGEN_LARK_CLI` → PATH 定位，
+Windows 优先 `lark-cli.cmd`（npm 的包装器），POSIX 只找裸名字；
+找不到时**返回裸名字而不抛异常**——`DEFAULT_LARK_CLI` 在导入期求值，此处抛异常会让
+根本不碰飞书的纯本地流程（`build.py`）也 import 失败。`test_plat.py` 的
+`t_no_hardcoded_abs_path` 扫 `tcgen/` 全包守这条（只扫代码字符串，
+docstring 里举例 `C:/Users/...` 不算违例）。
+
+**修 Linux 不能顺手弄坏 Windows**。中文输出上踩过一次：为了让 Ubuntu 在 `LC_ALL=C`
+下 print 中文不崩，两个测试文件曾**无条件**把 stdout 包成 UTF-8——结果在 Windows 的
+cp936 控制台里，中文输出全成了乱码。正确做法是 `plat.force_utf8_stdout()`：
+**先试当前编码能不能写中文，写得出就一动不动**，写不出才换。
+`t_stdout_kept_when_encodable` 与 `t_stdout_switched_when_ascii` 成对守两个方向，
+少任一个都会让「修好一边、弄坏另一边」重演。
+
 **清空飞书 `scope=all` 会连格式一起清掉**，之后必须跑 `sync_feishu.py format` 重建。
 
 **审计报告的 `AUDIT_MAIN_LAST`** 要填主区最后一行，它之后的 G/H 列是饼图辅助块，
@@ -109,7 +190,9 @@ REQ 清单结构性完整（章节反查差集、编号连续、字段枚举、�
 
 ## 自检
 
-模板自带一份门禁全通过的样例数据。管道改动后跑一遍，应输出「硬门禁: 全部通过」。
+管道改动后**七个都要跑**，缺一不可。每个都覆盖了别人覆盖不到的代码路径。
+
+**① 门禁自检**：模板自带一份门禁全通过的样例数据，应输出「硬门禁: 全部通过」。
 在 skill 仓库内建临时目录即可，`_boot.py` 会自动向上找到 `skills/` 布局，无需配置：
 
 ```bash
@@ -117,3 +200,75 @@ cd <仓库根>                 # 例如 D:/P_TestCase
 mkdir -p _selftest && cp skills/req-testcase-generator/scripts/project_template/*.py _selftest/
 cd _selftest && python build.py && cd .. && rm -rf _selftest
 ```
+
+**② 思维导图排版回归**：应输出「思维导图回归: 8/8 通过」。
+
+```bash
+cd skills/req-testcase-generator/scripts && python test_drawio_group.py
+```
+
+**为什么必须单独跑 ②**：样例数据只有 11 个 TP，达不到 `group_min=12`，
+**模块层那段代码在 ① 里根本不会被执行**——① 报「全部通过」不代表模块层没坏。
+`test_drawio_group.py` 专门造够量的数据把它跑到，覆盖硬门禁 13 的思维导图各项：
+模块层触发/不触发、跨模块 TP 唯一归属、模块 id 不撞、同层零重叠、
+父子距离 ≤600px、无裸用例节点、drawio 与 mermaid 层级一致。
+已用故障注入验证过它抓得住真问题（关掉模块层 → `t_group`/`t_mod_id_unique` 失败；
+模块 id 改回用中文拼 → `t_mod_id_unique` 失败；排序键回退成按用例数 → `t_module_order` 失败；
+归属回退成取首条用例 → `t_attribution_majority` 失败）。
+
+**③ 标题/类型门禁回归**：应输出「标题/类型门禁回归: 6/6 通过」。
+
+```bash
+cd skills/req-testcase-generator/scripts && python test_audit_title.py
+```
+
+**为什么必须单独跑 ③**：样例数据全部合规，硬门禁 15 那三项在 ① 里恒为 0，
+**等于新门禁根本没被执行**。本文件专门造违例数据把它们跑到：元层面标题 4 条必须抓到、
+9 条易混标题（`用验证码登录成功` 等）必须零误报、覆盖↔类型三组矛盾必须抓到、
+而 EX 交叉的合规写法（`稳定性测试 + 异常`）必须放过、软提示 C 必须不进 `gates()`。
+
+**④ 飞书比对回归**：应输出「飞书比对回归: 13/13 通过」。不联网，桩掉 `read_sheet` / `_run`。
+
+**⑤ 饼图生成回归**：`python test_xlsx_pies.py`，应输出「饼图生成回归: 5/5 通过」。
+纯 openpyxl 内存构图，不联网。守 A 方案在**生成侧**的落地：零合计块不画图、
+有缺陷时照画、辅助块仍写、I–P 列不许写字（否则 CSV 变宽）。
+
+**⑥ 复用检查回归**：`python test_reuse.py`，应输出「复用检查回归: 9/9 通过」。
+守「项目侧不许抄一份共享实现」这条门禁**本身不误报**——9 项里 4 项是误报守卫。
+第一版用文本 grep，在真实项目上报 13 处、其中 12 处是误报（`"P1"` 是优先级值不是
+格位 P1；`TITLE_META_RX` 出现在项目文件里恰恰是正确的 import；`chart-create`
+命中的是薄封装自己的文档字符串）。现改用 AST 只认三种真抄形态：自建 `PieChart()`、
+自拼 `chart-create`、自己**赋值定义**共享常量或格位表。
+`build.py` 已内置该检查（`tcgen.reuse.report`），每次构建都会打印一行。
+
+```bash
+cd skills/req-testcase-generator/scripts && python test_feishu_diff.py
+```
+
+**⑦ 跨平台回归**：`python test_plat.py`，应输出「跨平台回归: 14/14 通过」。
+不联网，也不要求本机真的装了 lark-cli。守「同一份 skill 在 Windows 与 Ubuntu 都能跑」：
+lark-cli 定位四条路径（env 覆盖 / `~` 展开 / 找不到时返回裸名字不抛异常 /
+Windows 试 `.cmd`、POSIX 不试）、缺 CLI 的报错含三条修法、中文输出两个方向都不坏、
+以及 `tcgen/` 不许再出现写死的绝对路径。
+已用故障注入验证抓得住回退（恢复写死路径 → `t_no_hardcoded_abs_path` 与
+`t_default_lark_cli_not_absolute_literal` 双双失败；stdout 改回无条件包 UTF-8 →
+`t_stdout_kept_when_encodable` 失败；`_exec` 不翻译 `FileNotFoundError` →
+`t_exec_translates_missing_cli` 直接崩在裸异常上）。
+
+**为什么必须单独跑 ④**：`diff_sheets` 只在「改完数据同步飞书」时才被调用，
+① ② ③ 全都碰不到它；而它报出的单元格地址是人照着去改的依据，**地址错一位就会改错格子**
+（实测把备注列 `I9` 报成了测试结果列 `H9`——列号传了 0-based 而 `col_letter` 是 1-based）。
+`t_col_is_one_based` 专盯这条，另外守着整数 `147.0` vs `"147"` 不算差异、
+尾部空行空列不算差异、真差异不被归一化放过、本地缺 CSV 要显式报出。
+
+后两项 `t_charts_ok_when_aligned` / `t_charts_catch_row_shift` 守的是另一类事故：
+**审计报告增删行会打断饼图**。图表引用绝对单元格地址（`'质量审计报告'!G63:H66`），
+报告增删行后 G/H 辅助块整体位移，引用不跟着动——此时逐格比对全 OK、图表对象一个不少、
+辅助数据也完好，只有引用指向了空白区。实测报告插 5 行后 6 个饼图引用全偏 −5 行、
+线上 6 图全空。造测试数据时**辅助块要放在第 20 行以后**：放前几行的话 −5 得到负数行号
+会被正则滤掉，`extra` 少报一个，测出来的形态就和真实事故不一样了。
+
+**做故障注入时先删 `__pycache__`**。注入若与还原「字节数相同 + 同一秒内完成」
+（如把 `fv, lv` 写成 `lv, fv`），Python 会认为 `.pyc` 仍然有效、继续加载被注入的旧字节码——
+**还原后测试仍然失败，看起来像 skill 被改坏了，其实文件是好的**。
+判断方法：`cmp` 源文件与备份，一致就是缓存问题，`find . -name __pycache__ -type d -exec rm -rf {} +` 后重跑。

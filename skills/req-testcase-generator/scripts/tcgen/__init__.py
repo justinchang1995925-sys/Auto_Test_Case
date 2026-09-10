@@ -9,6 +9,6 @@
 约束：本包内不得出现任何项目专有的常量（REQ 正文、飞书 token、文件名、
 业务阈值）。项目专有的东西一律由调用方传参，见 project_template/。
 """
-from . import audit, drawio, dsl, feishu, xlsx   # noqa: F401
+from . import audit, drawio, dsl, feishu, plat, xlsx   # noqa: F401
 
-__all__ = ['dsl', 'audit', 'xlsx', 'drawio', 'feishu']
+__all__ = ['dsl', 'audit', 'xlsx', 'drawio', 'feishu', 'plat']

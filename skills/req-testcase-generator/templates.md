@@ -78,11 +78,17 @@ wb.save("测试交付件-{需求名}-{日期}.xlsx")
 
 飞书导入后连线错乱、全是黑箭头，根因是：edge 用了带箭头的流程图样式、节点坐标手工摆放互相交叉、没有从左到右规整的树布局。适配要点（强制）：
 
-1. **左向右树布局，节点不重叠**：根在最左（列 x≈40），维度在中列（x≈300），测试点在右列（x≈560）；同层节点按 `y` 依次错开、每个节点独占一行高度（如行距 ≥60），**严禁多个节点坐标重叠**，否则连线必乱。
+1. **左向右树布局，节点不重叠**：四列自左向右——根 x≈40、维度 x≈320、测试点 x≈620、测试用例 x≈980；同层节点按 `y` 依次错开、每个节点独占一行高度（如行距 ≥60），**严禁多个节点坐标重叠**，否则连线必乱。
 2. **分支线用正交圆角、无箭头、有方向**：edge 样式统一 `edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;`（从父节点右侧中点出、进子节点左侧中点，走飞书思维导图那种横向分支线，不产生黑箭头也不交叉）。
 3. **一个父节点的所有子节点，其 `y` 范围应围绕父节点 `y` 上下分布**（父居中、子上下展开），避免所有线挤向一点。
 4. **节点圆角气泡 + 分维度配色**：根=深色、功能=蓝、性能=橙、稳定性=绿、兼容性=青、安全=红、用户体验=紫；测试点用对应维度浅色。
-5. 层级与 Mermaid 一致：根=需求名 → 维度 → 测试点，测试点文本以 `TP-ID` 开头，可追溯回追溯表。
+5. **层次（强制）**：根=需求名 → 维度 →〔模块，条件性〕→ 测试点 → **测试用例**。测试点文本以 `TP-ID` 开头，用例文本为 `TC-ID [覆盖类型·优先级] 用例标题`，均可追溯回追溯表。用例层是评审用的「每个测试点测哪些方面」，缺这一层评审看不出覆盖广度，判为不合格。
+   - **模块层触发条件：单一维度 TP 数 ≥12**。父节点摆在其整个子块的垂直中心，某维度独占大半 TP 时其标签会被推到屏幕外（实测：功能维度 56 个 TP，块高 4545px，标签距首个子节点 2070px），看起来像「维度丢了、直接显示 TP-TC」。插入模块层后「模块→测试点」距离回落到 41–446px。分组键取 TC-ID 的模块缩写（`TC-{模块}-001` / `TC-EX-{模块}-001` / `TC-SP-{模块}-001`），**模块名必须写中文**。
+   - **模块顺序按「组内最小 TP 号」升序排**，不按用例数、不按字母序。TP 号本身是分段编排的（一个模块占一个十位段），按号排出来的顺序才与编号一致——读者自上而下看到的就是 `TP-F-001`、`002`… 递增。按用例数排会让 001 开头的模块掉到中间，评审时对不上号。
+   - **少数 TP 的用例跨模块**（同一 TP 下用例来自不同模块），模块归属按**用例模块占多数者胜**，平票时**归给号段最近的模块**；保证一个 TP 只出现在一个组里，否则同一 TP 会在多个模块下重复出现、TC 数虚高。**不可取「首条用例」**——首条是按 `(REQ, TC)` 排序的结果，与模块无关，会把 TP 判给号段完全不相干的模块：实测 `TP-F-041` 有 2 条 STATE + 2 条 COMBO，首条恰是 REQ 较小的 STATE，于是 041 被判给状态流转组，可它的号在 04x（组合编排段），导致该组最小号变成 041、整个 06x 块被提到 050 前面，模块顺序出现两处逆序。
+   - **TC 标题与其 TP 描述同文时不重复整句**（TP 描述默认取自首条用例标题，必然撞车），但要留下可读的「测哪个方面」（如补「同测试点主场景」）——只剩 `TC-ID [正向·P1]` 的裸节点评审看不出在验什么。
+6. **叶子驱动布局**：用例(TC)在最右列逐行铺开，每条独占一行；测试点、模块、维度、根节点分别按其子块纵向居中，避免父节点与子块错位。五列 x 坐标：根 40 / 维度 320 / 模块 520 / 测试点 760 / 用例 1120。TC 节点宽度需大于 TP（文本更长），字号可略小（如 `fontSize=11;align=left;`）。
+7. **模块节点 id 不能用维度名拼**：维度名是中文，经 `[^0-9A-Za-z_]→_` 清洗后会变成一串下划线（`mod____0`），不同维度的同序号组必然撞 id。用维度序号（`mod_{维度序号}_{组序号}`），且 drawio 与 Mermaid 两种输出共用同一个 id 生成函数。
 
 结构骨架（左→右树布局、正交无箭头分支线、坐标不重叠）：
 
@@ -96,25 +102,35 @@ wb.save("测试交付件-{需求名}-{日期}.xlsx")
         <!-- 根（最左，纵向居中） -->
         <mxCell id="root" value="咖啡机项目饮品APP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#111827;fontColor=#FFFFFF;strokeColor=none;" vertex="1" parent="1"><mxGeometry x="40" y="200" width="180" height="44" as="geometry"/></mxCell>
         <!-- 维度（中列，纵向错开不重叠） -->
-        <mxCell id="dim_f" value="功能" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#3B82F6;" vertex="1" parent="1"><mxGeometry x="300" y="120" width="120" height="40" as="geometry"/></mxCell>
-        <mxCell id="dim_p" value="性能" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEDD5;strokeColor=#F97316;" vertex="1" parent="1"><mxGeometry x="300" y="280" width="120" height="40" as="geometry"/></mxCell>
-        <!-- 测试点（右列，围绕父节点上下分布） -->
-        <mxCell id="tp_f_001" value="TP-F-001 下单成功" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#93C5FD;" vertex="1" parent="1"><mxGeometry x="560" y="80" width="220" height="40" as="geometry"/></mxCell>
-        <mxCell id="tp_f_002" value="TP-F-002 支付失败提示" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#93C5FD;" vertex="1" parent="1"><mxGeometry x="560" y="150" width="220" height="40" as="geometry"/></mxCell>
-        <mxCell id="tp_p_001" value="TP-P-001 出杯响应≤3s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#FDBA74;" vertex="1" parent="1"><mxGeometry x="560" y="280" width="220" height="40" as="geometry"/></mxCell>
+        <mxCell id="dim_f" value="功能" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#DBEAFE;strokeColor=#3B82F6;" vertex="1" parent="1"><mxGeometry x="320" y="120" width="130" height="40" as="geometry"/></mxCell>
+        <mxCell id="dim_p" value="性能" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEDD5;strokeColor=#F97316;" vertex="1" parent="1"><mxGeometry x="320" y="280" width="130" height="40" as="geometry"/></mxCell>
+        <!-- 模块（TP 数 ≥12 的维度才有这一层；此处示意功能维度） -->
+        <mxCell id="mod_0_0" value="状态流转与招揽迎宾" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#3B82F6;fontStyle=1;" vertex="1" parent="1"><mxGeometry x="520" y="115" width="170" height="34" as="geometry"/></mxCell>
+        <!-- 测试点（围绕父节点上下分布；有模块层时父节点是模块，否则是维度） -->
+        <mxCell id="tp_f_001" value="TP-F-001 下单成功" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#93C5FD;" vertex="1" parent="1"><mxGeometry x="760" y="80" width="300" height="40" as="geometry"/></mxCell>
+        <mxCell id="tp_f_002" value="TP-F-002 支付失败提示" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EFF6FF;strokeColor=#93C5FD;" vertex="1" parent="1"><mxGeometry x="760" y="150" width="300" height="40" as="geometry"/></mxCell>
+        <mxCell id="tp_p_001" value="TP-P-001 出杯响应≤3s" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF7ED;strokeColor=#FDBA74;" vertex="1" parent="1"><mxGeometry x="760" y="280" width="300" height="40" as="geometry"/></mxCell>
+        <!-- 测试用例（最右列，评审用「该测试点测哪些方面」，逐条独占一行） -->
+        <mxCell id="tc_save_001" value="TC-SAVE-001 [正向·P0] 已选预设时保存生效" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBFDFF;strokeColor=#93C5FD;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="1"><mxGeometry x="1120" y="60" width="430" height="30" as="geometry"/></mxCell>
+        <mxCell id="tc_save_006" value="TC-SAVE-006 [异常·P1] 保存失败时配置不生效并提示" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBFDFF;strokeColor=#93C5FD;fontSize=11;align=left;spacingLeft=8;" vertex="1" parent="1"><mxGeometry x="1120" y="100" width="430" height="30" as="geometry"/></mxCell>
         <!-- 分支线：正交圆角、无箭头、父右→子左 -->
         <mxCell id="e1" edge="1" parent="1" source="root" target="dim_f" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#3B82F6;"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="e2" edge="1" parent="1" source="root" target="dim_p" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#F97316;"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e3" edge="1" parent="1" source="dim_f" target="tp_f_001" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#93C5FD;"><mxGeometry relative="1" as="geometry"/></mxCell>
-        <mxCell id="e4" edge="1" parent="1" source="dim_f" target="tp_f_002" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#93C5FD;"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_mod" edge="1" parent="1" source="dim_f" target="mod_0_0" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#3B82F6;"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="mod_0_0" target="tp_f_001" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#93C5FD;"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e4" edge="1" parent="1" source="mod_0_0" target="tp_f_002" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#93C5FD;"><mxGeometry relative="1" as="geometry"/></mxCell>
         <mxCell id="e5" edge="1" parent="1" source="dim_p" target="tp_p_001" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#FDBA74;"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="tp_f_001" target="tc_save_001" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#93C5FD;"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="tp_f_001" target="tc_save_006" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;startArrow=none;endArrow=none;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeColor=#93C5FD;"><mxGeometry relative="1" as="geometry"/></mxCell>
       </root>
     </mxGraphModel>
   </diagram>
 </mxfile>
 ```
 
-要求：`<diagram name>` 用「XX项目测试点」命名；所有 edge 用上述正交无箭头样式且 `exit/entry` 固定为父右→子左；节点坐标从左到右分列、同列纵向错开不重叠；子节点围绕父节点上下展开。交付前自检：在 drawio/飞书打开确认连线不交叉、无黑箭头、呈横向树状。
+要求：`<diagram name>` 用「XX项目测试点」命名；所有 edge 用上述正交无箭头样式且 `exit/entry` 固定为父右→子左；节点坐标从左到右分列、同列纵向错开不重叠；子节点围绕父节点上下展开。交付前自检：在 drawio/飞书打开确认连线不交叉、无黑箭头、呈横向树状，**且每个测试点下都挂出了它的测试用例节点（无用例的测试点须能说明原因，如专项用例走专项两表时用 `extra_cases` 挂上）**。
+
+**由脚本生成，不手工拼 XML**：`tcgen.drawio.build(out, CASES, root_label, tp_names=..., extra_cases=...)` 已实现上述全部规则（四级层次、叶子驱动居中、六维度配色、正交无箭头）。项目侧只传数据，见 [pipeline.md](pipeline.md)。
 
 ## 测试计划模板（可导入飞书在线文档的 `.md`）
 
@@ -370,28 +386,34 @@ wb.save("测试交付件-{需求名}-{日期}.xlsx")
 
 ## 测试点思维导图模板
 
+由 `tcgen.drawio.mermaid()` 生成，**不手写**。层级：根 → 维度 →〔模块〕→ 测试点 → 测试用例。
+TP 数 ≥12 的维度插模块层（下例「功能」），其余维度 TP 直挂维度（下例「性能」「安全」）。
+节点文本用双引号包裹，因为 `TC-ID [覆盖类型·优先级]` 含方括号。
+
 ```mermaid
 mindmap
   root((【需求名称】))
     功能
-      主流程
-        TP-F-001 【测试点描述】
-        TP-F-002 【测试点描述】
-      分支与规则
-        TP-F-010 【测试点描述】
-      异常与边界
-        TP-F-020 【测试点描述】
+      mod_0_0["【模块中文名，如 状态流转与招揽迎宾】"]
+        TP_F_001["TP-F-001 【测试点描述】"]
+          TC_STATE_001["TC-STATE-001 [正向·P0] 【用例标题】"]
+          TC_STATE_013["TC-STATE-013 [反向·P2] 【用例标题】"]
+        TP_F_002["TP-F-002 【测试点描述】"]
+          TC_STATE_002["TC-STATE-002 [正向·P1] 同测试点主场景"]
+      mod_0_1["【模块中文名，如 保存制作流程】"]
+        TP_F_010["TP-F-010 【测试点描述】"]
+          TC_SAVE_001["TC-SAVE-001 [正向·P0] 【用例标题】"]
     性能
-      TP-P-001 【测试点描述】
-    稳定性
-      TP-S-001 【测试点描述】
-    兼容性
-      TP-C-001 【测试点描述】
+      TP_P_001["TP-P-001 【测试点描述】"]
+        TC_SP_PERF_001["TC-SP-PERF-001 [专项·P1] 【指标（阈值X，采样N=30）】"]
     安全
-      TP-SEC-001 【测试点描述】
-    用户体验
-      TP-UX-001 【测试点描述】
+      TP_SEC_101["TP-SEC-101 【功能安全测试点描述】"]
+          TC_EX_ESTOP_001["TC-EX-ESTOP-001 [功能安全-触发·P0] 【用例标题】"]
+          TC_EX_ESTOP_004["TC-EX-ESTOP-004 [功能安全-恢复·P0] 【用例标题】"]
 ```
+
+> 对话中预览可退回三级（`show_cases=False`）保持简洁，但**正式交付件必须出到用例层**。
+> 「同测试点主场景」是 TC 标题与其 TP 描述同文时的替代写法，见上文规则 5。
 
 ---
 
@@ -671,6 +693,8 @@ mindmap
 | 前置条件用「；」把多个条件堆一行 | 难逐项核对准备 | 用编号列表 `1. … 2. … 3. …` 逐点写清 |
 | 操作步骤写「按要求操作」 | 不可复现 | 逐步写清点击路径和输入值 |
 | 用例标题是功能名 | 看不出测什么 | 标题 = 条件 + 行为 + 预期 |
+| 用例标题写「验证方法」而非场景与预期（如 `X 由 Y 验证`、`试听中不可取消由再次点击验证`） | 标题在说「用什么手段去验」，读者看不出什么条件下发生什么、预期如何；且这类标题的范围常与步骤不一致（标题只说「再次点击」，步骤却是「反复点击其他按钮/该语音」），执行时照标题理解就会漏测半边 | 回到该用例究竟在什么场景下验什么，按「条件 + 行为 + 预期」重写，如 `试听中反复点击该语音或其他按钮均不中断播放`；硬门禁 15-A 用正则拦「手段介词 + 元动词收尾」 |
+| 批量补用例时沿用相邻用例的「测试类型」（紧邻一条真异常用例，就跟着也写「异常测试」） | 两条用例本质不同却共用类型。实测 `TC-SAVE-007`「未保存→机器人正确地不进自动模式」被标成异常测试，可它全程无任何故障发生，是标准反向测试；同批第三条反而写对了，说明是手滑而非误解 | 逐条按「本质在测什么」定类型，不看邻居：有**外部故障注入**（网络失败/超时/服务不可用/掉电/mock 保存失败）才是异常；**前置不满足或输入不合法**导致功能正确地不生效是反向。硬门禁 15-B 拦「覆盖类型 ↔ 测试类型」矛盾，但两列一起抄错时拦不住，须靠本条自查 |
 | 功能用例挂到 `TP-P/S/C/SEC/UX` 前缀的 TP 上 | 思维导图按前缀归类，会把该功能用例错误显示在性能/安全等维度下 | 用例维度与 TP 前缀维度必须一致：功能类挂 `TP-F-xxx`；如为专项配套功能用例，另建 `TP-F-xxx`，不塞进专项 `TP-P/S-xxx` |
 | 用例「测试类型」与其 TP 前缀维度不符（如内容是功能验证却标「安全测试」，或反之） | 维度错配，审计/导图归错类；还可能掩盖深度缺口（被错标为其它维度而漏过功能深度校验） | 回原文/REQ 声明类型定性该用例本质在测什么，据此改测试类型或改挂 TP，使 `TP前缀维度 = 用例维度 = REQ声明维度` |
 | 功能安全用例预期只写「急停生效」「机器人停止」「触发保护」 | 不可判定，测了也不知道算不算过；掩盖停不住、不上报、擅自恢复三类真缺陷 | 写全三要素：**停止时限**（如「≤500ms 内所有关节停止且抱闸生效」）+ **状态上报**（如「上报 `ESTOP_ACTIVE`，APP 显示急停告警条」）+ **恢复行为**（如「旋钮复位后须在 APP 点击『确认恢复』才退出急停态，不得自动恢复运动」） |

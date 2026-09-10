@@ -337,7 +337,13 @@ def build_audit(ws, a, report_note, ex=None, n_spec=0,
 
 
 def add_pies(ws, a):
-    """审计报告内嵌 6 个饼图，辅助数据块写在 G/H 列，图锚定在 J 列。"""
+    """审计报告内嵌饼图，辅助数据块写在 G/H 列，图锚定在 J 列。
+
+    **合计为 0 的块不画图**（如四类质量缺陷全为 0 的零缺陷情形）：空白饼图无法自证，
+    它和「引用地址错位」「数值格存成文本」这两种真故障在页面上长得一模一样，
+    读者只会当成交付件坏了。辅助数据块照旧写在 G/H 列，那几个 0 就摆在原处，
+    比一个空图说得清楚。
+    """
     def pie(title, pairs, anchor='J'):
         r0 = ws.max_row + 2
         ws.cell(r0, 7, title).font = Font(bold=True)
@@ -346,6 +352,11 @@ def add_pies(ws, a):
             ws.cell(h, 7, k)
             ws.cell(h, 8, v)
             h += 1
+        # 合计为 0 画不出饼图。这里**不往单元格写结论文本**：xlsx 的格子会随
+        # export_csv 流进 CSV，而线上那行文本由 feishu.rebuild_charts 写在渲染层
+        # tile（不来自 CSV），两边地址不同，写了就会造出一条永远修不掉的假差异。
+        if not sum(v for _, v in pairs):
+            return
         ch = PieChart()
         ch.title = title
         ch.add_data(Reference(ws, min_col=8, min_row=r0 + 1, max_row=h - 1),
@@ -369,10 +380,15 @@ def add_pies(ws, a):
          ('深度缺口', len(a['depth_bad'])), ('反模式', len(a['step_bad'])),
          ('追溯缺口', len(a['uncovered']))])
     pie('优先级分布', [(p, a['pri'][p]) for p in ('P0', 'P1', 'P2', 'P3')])
+    # 门禁项数取自 _audit.gates(a)，**不许在这里手写一份清单**：手写的那份会在
+    # skill 新增门禁后悄悄落后（实测某项目手写 10 项、权威已 12 项，饼图少算 2 项）。
     g = [ok for _, ok in _audit.gates(a)]
+    # +1 的含义写进标签：有 Blocked/Draft 未清零时额外记一项未通过，
+    # 否则读者看到「未通过 1」却发现 12 项门禁全绿，会以为饼图算错了。
     pie('硬门禁通过占比',
         [('通过', sum(g)),
-         ('未通过', len(g) - sum(g) + (1 if (a['blk'] or a['draft']) else 0))])
+         ('未通过(含Blocked/Draft未清零)',
+          len(g) - sum(g) + (1 if (a['blk'] or a['draft']) else 0))])
 
 
 # ---------------- 入口 ----------------

@@ -11,9 +11,11 @@
        （项目建在 skill 仓库内、或把 skill 放进项目的 .claude/skills 都能命中）
     4. 用户级安装位置 ~/.claude/skills/... 与 ~/.cursor/skills/...
 
-**跨机器最省事的做法**：在项目目录放一个 `.tcgen_home` 文件，写上 skill 路径，例如
-    D:\\P_TestCase\\skills\\req-testcase-generator
-这样换机器只改这一个文件，脚本本身不用动。
+**跨机器最省事的做法**：在项目目录放一个 `.tcgen_home` 文件，写上 skill 路径：
+    Windows   D:/P_TestCase/skills/req-testcase-generator
+    Ubuntu    /home/<user>/P_TestCase/skills/req-testcase-generator
+这样换机器只改这一个文件，脚本本身不用动。Windows 上正斜杠与反斜杠都能用
+（路径一律经 os.path 处理），`~` 会被展开。
 """
 import os
 import sys
@@ -107,10 +109,11 @@ def find():
     raise RuntimeError(
         'tcgen 未找到。三种任选其一：\n'
         '  a) 在项目目录建 %s 文件，内容写 skill 路径，例如\n'
-        '     D:\\P_TestCase\\skills\\%s\n'
+        '     Windows: D:/P_TestCase/skills/%s\n'
+        '     Ubuntu : ~/P_TestCase/skills/%s\n'
         '  b) 设环境变量 TCGEN_HOME 指向 skill 的 scripts 目录\n'
         '  c) 把 skill 目录复制到项目的 .claude/skills/ 下\n'
-        '已尝试: %s' % (CONFIG_NAME, _SKILL, '; '.join(tried) or '(无)'))
+        '已尝试: %s' % (CONFIG_NAME, _SKILL, _SKILL, '; '.join(tried) or '(无)'))
 
 
 def setup():

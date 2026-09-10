@@ -23,6 +23,36 @@ COVER_STATUS_OK = {'待覆盖', '阻塞', 'N/A'}
 # 功能安全三触发源：键=用例「测试数据」列里的关键字，值=报告展示名
 FS_SOURCES = {'面板': '面板', '外部': '外部回路', '软件': '软件指令'}
 
+# 门禁A：标题写成「验证方法」的语言特征 —— 手段介词 + 元动词收尾。
+# 只匹配句末，且排除「验证码/校验和/检查项」这类元动词作名词的情形；
+# 实测对 147 条真实标题零误报，故可作阻断项。
+TITLE_META_RX = re.compile(
+    r'(由|用|通过|借助|以)[^,;，；]{0,12}(验证|校验|检查|核实|测试)(?![码和项表器])\s*$')
+
+# 门禁B：专用型测试类型 → 其唯一合法覆盖类型。
+# 只约束功能维度内的三个专用类型。**性能/稳定性/兼容性测试不能列进来**：
+# 它们是跨维度类型，覆盖类型由「后果归属」决定而非由测试类型决定——
+# exception-library.md 明文规定 EX 交叉用例后果为「数据不一致」时归稳定性维度、
+# 测试类型填 `稳定性测试`，而覆盖类型用 `异常`/`反向`。把它们列进来会把这种
+# 合规写法误判成违例（实测拦到 TC-EX-DATA-001）。
+# 通用型（功能/接口/安全/用户体验测试）本就可搭配多种覆盖类型，同样不列入。
+TTYPE_COVER = {
+    '反向测试': '反向', '边界测试': '边界', '异常测试': '异常',
+}
+
+# 软提示C：设计技法 → 相容的测试类型白名单（按技法原理列，不是拟合现有数据）。
+# 未列入的技法（如异常注入）不参与该提示。
+TECH_TTYPE_OK = {
+    '边界值': {'边界测试', '功能测试', '反向测试', '异常测试'},
+    '错误推测': {'反向测试', '异常测试', '功能测试', '接口测试',
+                 '用户体验测试', '稳定性测试'},
+    '等价类': {'功能测试', '反向测试', '异常测试', '用户体验测试'},
+    '判定表': {'功能测试', '反向测试', '异常测试'},
+    '状态迁移': {'功能测试', '接口测试', '反向测试', '异常测试'},
+    '场景法': {'功能测试', '接口测试', '用户体验测试', '性能测试',
+               '稳定性测试', '兼容性测试', '安全测试', '异常测试', '反向测试'},
+}
+
 
 def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
             spec_companion_reqs=None):
@@ -95,6 +125,27 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
     # ---- 门禁：TP 维度与用例维度错配 ----
     dim_bad = [c['tc'] for c in CS
                if TT2DIM.get(c['ttype'], '?') != tp_dim(c['tp'])]
+
+    # ---- 门禁 A：标题不得写「验证方法」而非「场景+预期」----
+    # 反例（真实踩过）：`试听中不可取消由再次点击验证` —— 元动词收尾说明整句在描述
+    # 「用什么手段去验」，而标题应当写「什么条件下发生什么、预期如何」。
+    # 只判句末：元动词出现在句中多为名词或定语（`用验证码登录成功`、
+    # `验证码错误时提示重新输入`），一律不算违例。
+    title_meta_bad = [c['tc'] for c in CS if TITLE_META_RX.search(c['title'] or '')]
+
+    # ---- 门禁 B：覆盖类型 ↔ 测试类型 必须同源 ----
+    # 专用型测试类型（反向/边界/异常/性能/稳定性/兼容性测试）各自绑定唯一覆盖类型；
+    # 抓的是「改了一个字段忘改另一个」——两列自相矛盾时，导图、附表、矩阵会各说一套。
+    # 通用型（功能/接口/安全/用户体验测试）可搭配多种覆盖类型，不在此约束内。
+    cover_bad = [c['tc'] for c in CS
+                 if c['ttype'] in TTYPE_COVER and c['cover'] != TTYPE_COVER[c['ttype']]]
+
+    # ---- 软提示 C：设计技法 ↔ 测试类型 相容性（列出待人工确认，不阻断）----
+    # 技法决定了用例在测什么，与测试类型应当相容；但边界情形确实存在
+    # （如状态迁移技法配边界测试），故只提示不阻断，避免误报稀释硬门禁可信度。
+    tech_warn = [c['tc'] for c in CS
+                 if c['tech'] in TECH_TTYPE_OK
+                 and c['ttype'] not in TECH_TTYPE_OK[c['tech']]]
 
     # ---- 门禁：REQ 清单结构性完整（章节反查/编号/字段/分母）----
     req_secs = set((r[2], r[3]) for r in req_src)
@@ -185,6 +236,7 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
         spec_ok=spec_ok, spec_reqs=sorted(spec_reqs),
         spec_companion=sorted(companion), spec_companion_bad=spec_companion_bad,
         pri_incons=pri_incons,
+        title_meta_bad=title_meta_bad, cover_bad=cover_bad, tech_warn=tech_warn,
         dim_bad=dim_bad, sec_gap=sec_gap, num_gap=num_gap, num_dup=num_dup,
         field_bad=field_bad, denom_ok=denom_ok, req_struct_bad=req_struct_bad,
         doc_sec_total=len(doc_secs), section_na_total=len(section_na),
@@ -214,6 +266,12 @@ def gate_notes(a):
             ('被专项覆盖的REQ(%s)均含功能可用性用例' % (ids('spec_companion', 8) or '本期无')
              if a['spec_ok'] else '缺配套:' + ids('spec_companion_bad')),
         'TP维度与用例维度错配=0': '遍历TC比对(测试类型→维度)与(TP前缀→维度)',
+        '标题写验证方法数=0':
+            '正则查「手段介词+元动词收尾」(如「…由再次点击验证」);标题须写场景+预期'
+            + ('' if not a['title_meta_bad'] else ';违例:' + ids('title_meta_bad')),
+        '覆盖类型与测试类型矛盾数=0':
+            '专用型测试类型(反向/边界/异常/性能/稳定性/兼容性)各绑定唯一覆盖类型,遍历比对'
+            + ('' if not a['cover_bad'] else ';违例:' + ids('cover_bad')),
         'REQ清单结构性完整':
             '章节反查差集(文档章节全集%d−已引用−已标N/A %d)/编号连续/字段枚举/分母自洽 四项'
             % (a['doc_sec_total'], a['section_na_total']),
@@ -237,6 +295,8 @@ def gates(a):
         ('反模式(步骤预期错位)=0', not a['step_bad']),
         ('专项REQ配套功能用例齐全', a['spec_ok']),
         ('TP维度与用例维度错配=0', not a['dim_bad']),
+        ('标题写验证方法数=0', not a['title_meta_bad']),
+        ('覆盖类型与测试类型矛盾数=0', not a['cover_bad']),
         ('REQ清单结构性完整', a['req_struct_bad'] == 0),
         ('功能安全深度达标(触发+恢复,多触发源)',
          not (a['fs_depth_bad'] or a['fs_src_bad'] or a['fs_elem_bad'])),
