@@ -127,10 +127,96 @@ def t_gates_wired():
     return 'A/B 已接线，违例判未通过且回执列出 ID'
 
 
+
+def t_fs_gate_no_false_positive_when_no_fs_req():
+    """本期无功能安全 REQ 时，多触发源要求不得让门禁挂掉（误报）。
+
+    历史事故：fs_src_have 无条件按三个触发源计数，fs_req 为空时三项全为 0 →
+    fs_src_bad 填满 → 「功能安全深度达标」恒不通过。任何没有功能安全需求的
+    项目（如纯软件工具类）都永远过不了这一项，且看不出原因。
+    """
+    a = run([mk('TC-A-001', '正常保存后配置生效', '功能测试', '正向'),
+             mk('TC-A-002', '缺少必填项时保存被拦截', '反向测试', '反向')])
+    assert a['fs_req'] == [], '样例不该有功能安全 REQ: %s' % (a['fs_req'],)
+    assert a['fs_src_bad'] == [], 'fs_req 为空却报缺触发源: %s' % (a['fs_src_bad'],)
+    g = dict(audit.gates(a))
+    k = '功能安全深度达标(触发+恢复,多触发源)'
+    assert g[k] is True, '无功能安全需求却判门禁未通过（误报）'
+    return '无 FS 需求时门禁通过，不再恒挂'
+
+
+def t_fs_gate_still_catches_missing_source():
+    """有功能安全 REQ 时，缺触发源必须照样被抓到——修误报不能顺手放过真问题。"""
+    fs_req = list(REQ) + [
+        ('REQ-002', '急停触发后整机停止与恢复', '异常注入库', 'EX-001',
+         '安全', '可测', '待覆盖', '功能安全;三触发源各须≥1条'),
+    ]
+    trig = mk('TC-ES-001', '按下面板急停后整机在500ms内停止并上报', '安全测试',
+              '功能安全-触发', req='REQ-002', tp='TP-SEC-101')
+    trig['data'] = '触发源=面板急停旋钮'
+    trig['exp'] = ['1. ≤500ms 内所有关节停止运动且抱闸生效，状态上报 ESTOP_ACTIVE，'
+                   '复位后需二次确认才恢复']
+    trig['steps'] = ['1. 按下面板急停旋钮']
+    rec = mk('TC-ES-002', '急停解除后需二次确认才恢复运动', '安全测试',
+             '功能安全-恢复', req='REQ-002', tp='TP-SEC-102')
+    a = audit.compute(cases=[trig, rec], req_src=fs_req)
+    assert a['fs_req'] == ['REQ-002'], 'FS REQ 未被识别: %s' % (a['fs_req'],)
+    assert a['fs_src_bad'], '只覆盖面板一个触发源，却未报缺外部回路/软件指令'
+    g = dict(audit.gates(a))
+    assert g['功能安全深度达标(触发+恢复,多触发源)'] is False, '缺触发源却判通过'
+    return '有 FS 需求时仍抓缺触发源: %s' % ('、'.join(a['fs_src_bad']),)
+
+
+
+def t_tp_degenerate_caught():
+    """测试点 1:1 退化必须被抓到：唯一用例且未给正式名称。
+
+    未给名称时测试点描述按定义就是首条用例标题（derive 的默认派生），必然同文。
+
+    实测踩过：47 个测试点对 47 条用例、描述与标题逐字相同，思维导图里 47 个用例节点
+    全部显示「同测试点主场景」（去重逻辑省掉重复标题），用例层等于空白。
+    它不违反坍缩/深度/追溯任何一条门禁，所以必须单独查。
+    """
+    a = run([mk('TC-A-001', '归档缺文件时判失败', '反向测试', '反向', tp='TP-F-001')])
+    assert a['tp_degenerate'] == ['TP-F-001'], \
+        '同文的单用例测试点未被判退化: %s' % (a['tp_degenerate'],)
+    g = dict(audit.gates(a))
+    assert g['测试点未1:1退化'] is False, '退化却判门禁通过'
+    return '同文单用例测试点被判退化'
+
+
+def t_tp_named_not_degenerate():
+    """给了正式名称的测试点不算退化——名称本身就是抽象，即使只挂一条用例。
+
+    有些校验项确实只需一条用例（如「输入非法位数被拦截」），若只按数量比判定
+    会把这类合规情形也报成退化，成为会误报的检查。
+    """
+    cases = [mk('TC-A-001', '归档缺文件时判失败', '反向测试', '反向', tp='TP-F-001')]
+    a = audit.compute(cases=cases, req_src=REQ,
+                      tp_name_map={'TP-F-001': '归档完整性与失败拦截'})
+    assert a['tp_degenerate'] == [], \
+        '已给正式名称却被判退化: %s' % (a['tp_degenerate'],)
+    assert dict(audit.gates(a))['测试点未1:1退化'] is True, '给了名称仍判门禁未过'
+    return '给了 tp_names 的测试点不误报'
+
+
+def t_tp_multi_case_not_degenerate():
+    """挂多条用例的测试点不算退化，即使未给正式名称。"""
+    cases = [mk('TC-A-001', '深圳按钮落深圳路径', '功能测试', '正向', tp='TP-F-001'),
+             mk('TC-A-002', '无锡按钮落无锡路径', '功能测试', '正向', tp='TP-F-001')]
+    a = audit.compute(cases=cases, req_src=REQ)
+    assert a['tp_degenerate'] == [], '多用例测试点被误判退化: %s' % (a['tp_degenerate'],)
+    return '多用例测试点不误报'
+
+
 def main():
     ts = [t_title_meta_catches, t_title_meta_no_false_positive,
           t_cover_mismatch_catches, t_cover_allows_cross_dimension,
-          t_tech_warn_is_soft, t_gates_wired]
+          t_tech_warn_is_soft, t_gates_wired,
+          t_fs_gate_no_false_positive_when_no_fs_req,
+          t_fs_gate_still_catches_missing_source,
+          t_tp_degenerate_caught, t_tp_named_not_degenerate,
+          t_tp_multi_case_not_degenerate]
     bad = 0
     for t in ts:
         try:

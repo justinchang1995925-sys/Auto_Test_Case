@@ -209,15 +209,17 @@ def t_charts_catch_row_shift():
 
 
 def t_charts_catch_text_numbers():
-    """数值格存成文本必须报出来——引用地址全对，饼图照样空白。
+    """数值格存成文本必须**单独报在 text_cells 里**，且不污染 miss/extra。
 
-    这是第二起真实事故：整表推送时每格都 `{'value': str(...)}`，H 列的 `67` 成了
-    `'67'`。此时引用地址完全正确、图表对象一个不少、辅助数据「看起来」也对，
-    但饼图取不到可绘制的数值，6 图全空。
+    `diff_sheets` 查不出这一条——`_norm_cell` 为消除「147 vs 147.0」的假差异，
+    会把 `67` 和 `'67'` 都归一化成 `"67"`，类型信息被抹掉。所以只能靠这里用
+    `read_sheet(raw=True)` 拿原值判类型。
 
-    关键：`diff_sheets` 查不出这一条——`_norm_cell` 为消除「147 vs 147.0」的
-    假差异，会把 `67` 和 `'67'` 都归一化成 `"67"`。两道检查同时失效，正是这次
-    「引用已修好、饼图仍无数据」的原因。
+    **但「文本必空白」不普遍成立，故 text_cells 是软提示，调用方不应据此阻断。**
+    实测（2026-09）：某环境 H 列 14 格全为字符串，5 个饼图渲染完全正常；且该
+    环境下 `+cells-set` 传数字、`+workbook-import` 导入 xlsx 写进去都变字符串，
+    没有通道能写出真数字。当阻断就会每次恒报又修不掉，变成会误报的检查。
+    本测试只断言「能报出且与 miss/extra 分离」，不断言它必须导致失败。
     """
     import tempfile
     with tempfile.TemporaryDirectory() as d:
@@ -345,6 +347,109 @@ def t_stale_chart_on_zeroed_block_caught():
     return '归零块的遗留旧图被检出（%s）' % stale
 
 
+
+class FakeExec(object):
+    """替换 feishu._exec，记录实际发出的命令并返回预设 stdout。"""
+
+    def __init__(self, stdout):
+        self.stdout = stdout
+        self.cmd = None
+
+    def __enter__(self):
+        self.orig = feishu._exec
+
+        class P(object):
+            pass
+
+        def fake(cmd, *a, **kw):
+            self.cmd = list(cmd)
+            r = P()
+            r.stdout = self.stdout
+            r.stderr = ''
+            r.returncode = 0
+            return r
+
+        feishu._exec = fake
+        return self
+
+    def __exit__(self, *exc):
+        feishu._exec = self.orig
+
+
+def t_read_sheet_uses_cells_get():
+    """守 read_sheet 用的子命令真实存在。
+
+    历史事故：这里曾用 `+read`，该子命令自 lark-cli 1.0.94 起改名 `+cells-get`。
+    命令报错 -> values 取空 -> 每格读成 '' -> diff 报「线上全空」的假差异
+    （实测 1624 处），且 diff 一失效，「图表引用错位」这类只能靠回读发现的
+    故障就再也抓不到。sheet 必须走独立 --sheet-id，range 里不带 sheet 前缀。
+    """
+    body = json.dumps({'ok': True, 'data': {'ranges': [{'cells': [[{'value': 'a'}]]}]}})
+    with FakeExec(body) as fx:
+        feishu.read_sheet('tok', 'sht1', last_col='H', last_row=9, lark_cli='lark-cli')
+    c = fx.cmd
+    assert '+read' not in c, '仍在用已不存在的 +read 子命令: %s' % c
+    assert '+cells-get' in c, '未使用 +cells-get: %s' % c
+    i = c.index('--sheet-id')
+    assert c[i + 1] == 'sht1', 'sheet 未走独立 --sheet-id: %s' % c
+    j = c.index('--range')
+    assert c[j + 1] == 'A1:H9', 'range 不应带 sheet 前缀: %r' % c[j + 1]
+    return 'cmd=+cells-get --sheet-id sht1 --range A1:H9'
+
+
+def t_read_sheet_parses_cells_shape():
+    """守 +cells-get 的返回结构解析：data.ranges[0].cells 每格是 {value:...} 而非裸值。
+
+    解析错会让每格都变成 dict 或 None，归一化后成为满屏假差异——
+    和用错子命令的症状一模一样，所以单独守一条。
+    """
+    body = json.dumps({'ok': True, 'data': {'ranges': [{'cells': [
+        [{'value': 'TC-001'}, {'value': 147}],
+        [{'value': '备注'}, {'value': None}],
+    ]}]}})
+    with FakeExec(body):
+        rows = feishu.read_sheet('tok', 'sht1', lark_cli='lark-cli')
+    assert rows[0][0] == 'TC-001', '首格解析错: %r' % (rows[0][0],)
+    assert rows[0][1] == '147', '数字未归一化成字符串: %r' % (rows[0][1],)
+    with FakeExec(body):
+        raw = feishu.read_sheet('tok', 'sht1', lark_cli='lark-cli', raw=True)
+    assert isinstance(raw[0][1], int), 'raw=True 应保留数字类型: %r' % (raw[0][1],)
+    return 'cells 形状解析正确，raw 保留类型'
+
+
+def t_read_sheet_raises_on_error():
+    """命令失败必须显式报错，不能静默返回空表——静默空表就是假差异的源头。"""
+    body = json.dumps({'ok': False, 'error': {'message': 'unknown subcommand'}})
+    try:
+        with FakeExec(body):
+            feishu.read_sheet('tok', 'sht1', lark_cli='lark-cli')
+    except RuntimeError:
+        return '失败时抛 RuntimeError，未静默返回空表'
+    raise AssertionError('命令失败却未抛错，会退化成「线上全空」假差异')
+
+
+
+def t_template_text_cells_not_blocking():
+    """守项目模板的退出码语义：文本数值格不得计入阻断。
+
+    模板 sync_feishu.py 的 do_diff 里，`bad` 只能由 miss/extra 构成。
+    把 text_cells 加回 `bad` 会让 diff 在「文本格但饼图正常」的环境下每次
+    非零退出且无法修复——门禁18 要求 diff 差异为 0 才算同步完成，一个修不掉的
+    非零退出等于把这道验收永久卡死，人只能绕过它，两项真检查一起失效。
+    """
+    src = io.open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               'project_template', 'sync_feishu.py'),
+                  encoding='utf-8').read()
+    assert 'bad = len(miss) + len(extra)' in src, \
+        '模板未把 bad 限定为 miss+extra（文本格可能又被算成阻断）'
+    assert 'bad = len(miss) + len(extra) + len(text_cells)' not in src, \
+        'text_cells 被计入阻断——会造成修不掉的非零退出'
+    i = src.index('if text_cells:')
+    tail = src[i:i + 400]
+    assert '不阻断' in tail, 'text_cells 输出未标注「不阻断」，读者会误以为必须修'
+    return '模板 bad 仅含 miss+extra，text_cells 标注为不阻断'
+
+
 def main():
     ts = [t_col_is_one_based, t_numeric_normalized, t_trailing_blanks_ignored,
           t_real_diff_still_caught, t_missing_local_csv,
@@ -352,7 +457,10 @@ def main():
           t_charts_catch_text_numbers, t_tile_cells_parses_addresses,
           t_tile_note_not_reported_as_diff, t_total_reflects_sum,
           t_zero_block_not_reported_missing,
-          t_stale_chart_on_zeroed_block_caught]
+          t_stale_chart_on_zeroed_block_caught,
+          t_read_sheet_uses_cells_get, t_read_sheet_parses_cells_shape,
+          t_read_sheet_raises_on_error,
+          t_template_text_cells_not_blocking]
     bad = 0
     for t in ts:
         try:

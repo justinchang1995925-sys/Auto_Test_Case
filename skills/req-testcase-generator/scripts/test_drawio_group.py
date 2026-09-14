@@ -236,9 +236,87 @@ def t_attribution_majority():
     return '跨模块 TP 归多数模块，无空模块'
 
 
+
+def t_group_by_requirement():
+    """group_by 按需求编号分组：顶层换成 F 编号，维度不再作为顶层。
+
+    产测工具类需求的组织轴是「每条需求要测哪些方面」，不是「六维度下有哪些
+    测试点」——后者会把同一条需求的测试点散到多个维度里，评审时看不出
+    某条需求的测试面是否完整。
+    """
+    cases = [mk('TC-BURN-001', 'TP-F-001', req='REQ-001'),
+             mk('TC-BURN-002', 'TP-F-002', req='REQ-002'),
+             mk('TC-ENC-001', 'TP-S-001', req='REQ-006'),
+             mk('TC-WL-001', 'TP-F-021', req='REQ-007')]
+    f_of = {'REQ-001': 'F17', 'REQ-002': 'F17', 'REQ-006': 'F15', 'REQ-007': 'F04'}
+    dims, groups, tp_desc, tp_cases = drawio.derive(
+        cases, group_by=lambda c: f_of.get(c['req']))
+    assert set(dims) == {'F17', 'F15', 'F04'}, '顶层未按 F 编号分组: %s' % dims
+    assert '功能' not in dims, '维度仍出现在顶层: %s' % dims
+    f17 = [tp for _, tps in groups['F17'] for tp in tps]
+    assert set(f17) == {'TP-F-001', 'TP-F-002'}, 'F17 下测试点不对: %s' % f17
+    # 跨维度的需求：F15 下同时可能有功能与稳定性 TP，仍归在同一个 F 下
+    f15 = [tp for _, tps in groups['F15'] for tp in tps]
+    assert f15 == ['TP-S-001'], 'F15 下测试点不对: %s' % f15
+    return '顶层=%s，各需求测试点独立成块' % '/'.join(dims)
+
+
+def t_group_by_keeps_dim_prefix():
+    """按需求分组不得篡改 TP 前缀——维度语义仍在 TP-ID 上，硬门禁14 照常校验。"""
+    cases = [mk('TC-A-001', 'TP-SEC-101', req='REQ-001'),
+             mk('TC-A-002', 'TP-S-001', req='REQ-001')]
+    dims, groups, _, _ = drawio.derive(cases, group_by=lambda c: 'F17')
+    tps = [tp for _, tps_ in groups['F17'] for tp in tps_]
+    assert 'TP-SEC-101' in tps and 'TP-S-001' in tps, 'TP 前缀被改动: %s' % tps
+    assert drawio._dim_of('TP-SEC-101') == '安全', 'TP 前缀维度解析被破坏'
+    return '安全/稳定性 TP 同归 F17，前缀维度语义不变'
+
+
+def t_group_by_none_falls_into_ungrouped():
+    """group_by 返回 None 的用例落入「未分组」，不静默丢弃。
+
+    静默丢弃会让导图少节点却不报错，与「测试点真的漏了」无法区分。
+    """
+    cases = [mk('TC-A-001', 'TP-F-001', req='REQ-001'),
+             mk('TC-B-001', 'TP-F-002', req='REQ-999')]
+    f_of = {'REQ-001': 'F17'}
+    dims, groups, _, _ = drawio.derive(cases, group_by=lambda c: f_of.get(c['req']))
+    assert '未分组' in dims, '无归属的 TP 被丢弃了: %s' % dims
+    assert dims[-1] == '未分组', '「未分组」应排在最后: %s' % dims
+    ung = [tp for _, tps in groups['未分组'] for tp in tps]
+    assert ung == ['TP-F-002'], '未分组内容不对: %s' % ung
+    return '无归属 TP 进「未分组」并排在末尾'
+
+
+def t_group_by_order_by_tp_no():
+    """顶层顺序按组内最小 TP 号排，与模块层同口径，保证自上而下 TP 号递增。"""
+    cases = [mk('TC-C-001', 'TP-F-050', req='REQ-A'),
+             mk('TC-A-001', 'TP-F-001', req='REQ-B'),
+             mk('TC-B-001', 'TP-F-020', req='REQ-C')]
+    f_of = {'REQ-A': 'F13', 'REQ-B': 'F17', 'REQ-C': 'F04'}
+    dims, _, _, _ = drawio.derive(cases, group_by=lambda c: f_of.get(c['req']))
+    assert dims == ['F17', 'F04', 'F13'], '顶层未按最小 TP 号排: %s' % dims
+    return '顶层顺序 %s（按最小 TP 号 1/20/50）' % '/'.join(dims)
+
+
+def t_group_by_colors_stable():
+    """自定义分组的配色按位置轮转，同一份数据两次构建配色一致（不用 hash）。"""
+    order = ['F17', 'F15', 'F04']
+    a = [drawio.colors_of(k, order) for k in order]
+    b = [drawio.colors_of(k, order) for k in order]
+    assert a == b, '两次取色不一致（用了 hash？）'
+    assert len(set(map(tuple, a))) == 3, '三个分组取到了相同配色: %s' % a
+    assert drawio.colors_of('功能', order) == drawio.DIM['功能'][1:], \
+        '六维度应仍用各自语义色'
+    return '配色按位置稳定轮转，维度色不受影响'
+
+
 def main():
     ts = [t_no_group, t_group, t_cross_module_tp, t_mod_id_unique,
-          t_dedupe, t_parity, t_module_order, t_attribution_majority]
+          t_dedupe, t_parity, t_module_order, t_attribution_majority,
+          t_group_by_requirement, t_group_by_keeps_dim_prefix,
+          t_group_by_none_falls_into_ungrouped,
+          t_group_by_order_by_tp_no, t_group_by_colors_stable]
     bad = 0
     for t in ts:
         try:

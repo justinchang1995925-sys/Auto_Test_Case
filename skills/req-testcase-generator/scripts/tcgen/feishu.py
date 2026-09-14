@@ -119,20 +119,34 @@ def read_sheet(token, sheet_id, last_col='P', last_row=400,
     「这一格到底是数字还是文本」时用（如饼图数值格检查）。归一化会把 `67` 和
     `'67'` 都变成 `"67"`，类型信息就丢了。
     """
-    # 必须用 +read，不能用 +cells-get：后者要求 --sheet-id 作为独立参数，
-    # 不认 range 里内嵌的 sheet id，校验失败会返回空 values —— 比对结果就变成
-    # 「线上全空」的假差异（实测一次刷出 4532 处假差异）。
-    cmd = [lark_cli or plat.lark_cli(), 'sheets', '+read',
+    # 用 +cells-get，且 sheet 必须走独立的 --sheet-id 参数、range 里不带 sheet 前缀。
+    # 历史上这里用过 `+read`，但该子命令自 lark-cli 1.0.94 起已不存在（改名
+    # `+cells-get`）。命令报错 → values 取空 → 每格都读成 ''，比对结果变成
+    # 「线上全空」的假差异（实测一次刷出 1624 处），而且 diff 一失效，
+    # 「图表引用错位」这类只能靠回读发现的故障就再也抓不到了。
+    # 校验命令是否存在：`lark-cli sheets --help`。
+    cmd = [lark_cli or plat.lark_cli(), 'sheets', '+cells-get',
            '--spreadsheet-token', token,
-           '--range', '%s!A1:%s%d' % (sheet_id, last_col, last_row),
+           '--sheet-id', sheet_id,
+           '--range', 'A1:%s%d' % (last_col, last_row),
            '--as', 'user']
     p = _exec(cmd)
     try:
         d = json.loads(p.stdout or '{}')
     except ValueError:
         raise RuntimeError('读 %s 失败: %s' % (sheet_id, (p.stdout or p.stderr)[:200]))
+    if not d.get('ok', True):
+        raise RuntimeError('读 %s 失败: %s' % (sheet_id, str(d.get('error'))[:200]))
     data = d.get('data') or {}
-    vs = (data.get('valueRange') or {}).get('values') or data.get('values') or []
+    # +cells-get 的形状：data.ranges[0].cells = [[{value: ...}, ...], ...]
+    # 每格是 dict 而非裸值，取不到 value 时回退到旧形状，兼容其它返回结构。
+    vs = []
+    ranges = data.get('ranges') or []
+    if ranges:
+        for row in (ranges[0].get('cells') or []):
+            vs.append([(c.get('value') if isinstance(c, dict) else c) for c in row])
+    else:
+        vs = (data.get('valueRange') or {}).get('values') or data.get('values') or []
     if raw:
         return [list(row) for row in vs]
     return [[_norm_cell(x) for x in row] for row in vs]
@@ -364,12 +378,20 @@ def diff_charts(token, sheet_id, csv_path, lark_cli=DEFAULT_LARK_CLI):
     而图表引用**不会跟着位移**。此时数据逐格比对全部一致、图表对象也都还在，
     但每个饼图都指向空白区。实测：报告插入 5 行后 6 个饼图引用全偏 −5 行。
 
-    ② **数值格存成了文本**。H 列写成 `{'value': '67'}`（字符串）而非
-    `{'value': 67}`（数字）时，引用地址完全正确、图表对象也在，但饼图拿不到
-    可绘制的数值，**照样一片空白**。整表推送时若把每格都 `str()` 一遍就会踩到。
-    这一条 `diff_sheets` 也查不出来——`_norm_cell` 为了消除「`147` vs `147.0`」
-    的假差异，会把 `67` 和 `'67'` 都归一化成 `"67"`，类型信息正好被抹掉。
-    所以这里必须用 `read_sheet(raw=True)` 拿未归一化的原值来判类型。
+    ② **数值格存成了文本**（`text_cells`，**软提示，不作阻断**）。H 列存成
+    `'67'` 而非 `67`。这一条 `diff_sheets` 查不出来——`_norm_cell` 为了消除
+    「`147` vs `147.0`」的假差异，会把 `67` 和 `'67'` 都归一化成 `"67"`，
+    类型信息正好被抹掉，所以这里用 `read_sheet(raw=True)` 拿原值判类型。
+
+    **但「文本必空白」并不普遍成立，故本项只提示不阻断**。实测（2026-09）：
+    某环境下 H 列 14 格全为字符串，5 个饼图**渲染完全正常、无空白**。并且
+    该环境下无可用通道能写出真数字——`+cells-set` 传 `{'value': 18}`
+    （dry-run 确认 payload 是数字）、`+workbook-import` 导入 xlsx，两条路径
+    写进去一律变字符串。若把本项当阻断，`diff` 会每次恒报十余处、且**无法修复**，
+    那就成了「一个会误报又修不掉的检查」——很快没人看，反过来削弱 missing/extra
+    这两项真检查的可信度。
+    因此：`missing`/`extra` 是硬性的（引用错位确实会让饼图指向空白区，实测过），
+    `text_cells` 仅作线索——**当饼图确实空白、且引用已对齐时，再来看这一项**。
 
     **合计为 0 的块被排除在检查之外**：按 A 方案它本就不该有饼图（改写结论文本），
     若仍算进 `exp` 就会把「按设计没有图表」报成 `missing` 假差异。反过来，某块从

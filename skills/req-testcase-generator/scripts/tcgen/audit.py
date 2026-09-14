@@ -54,8 +54,9 @@ TECH_TTYPE_OK = {
 }
 
 
+
 def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
-            spec_companion_reqs=None):
+            spec_companion_reqs=None, tp_name_map=None):
     """返回全部门禁数与违例清单。
 
     cases    : dsl.add 收集的用例列表
@@ -68,6 +69,7 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
                它们要参与功能深度判定，但同样须有配套功能用例。默认取 spec_reqs。
     """
     CS = cases
+    tp_name_map = tp_name_map or {}
     spec_reqs = set(spec_reqs)
     companion = set(spec_companion_reqs) if spec_companion_reqs else set(spec_reqs)
     srcmap = fs_source_map or FS_SOURCES
@@ -101,6 +103,21 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
     for c in CS:
         tp_tc[c['tp']].add(c['tc'])
     tp_no_tc = sorted(tp for tp, v in tp_tc.items() if not v)
+
+    # ---- 门禁：测试点 1:1 退化（测试点层没做抽象，只是复读用例标题）----
+    # 坍缩的对称反面：坍缩是「多 TP 挤进一条 TC」，退化是「每个 TP 只挂一条 TC 且
+    # 描述与该用例标题同文」。它不违反坍缩/深度/追溯任何一条，却让测试点层完全失去
+    # 信息量——思维导图里用例节点会因去重显示「同测试点主场景」，评审看不出测了哪些方面。
+    # 判据取「唯一用例 且 标题与 TP 描述同文」：只看数量比会把「该测试点确实只需一条用例」
+    # 的合规情形也算进来（如某些一次性校验项），必须叠加同文条件才不误报。
+    tp_titles = collections.defaultdict(list)
+    for c in CS:
+        tp_titles[c['tp']].append((c['tc'], (c['title'] or '').strip()))
+    # 未给正式名称时，测试点描述**按定义**就是首条用例标题（drawio.derive 的默认派生），
+    # 因此「唯一用例 + 未给名称」即同文退化；给了名称就说明已做抽象，不算。
+    tp_degenerate = sorted(
+        tp for tp, lst in tp_titles.items()
+        if len(lst) == 1 and not (tp_name_map or {}).get(tp))
 
     # ---- 反模式：步骤与预期条数错位（构建期 assert 已挡，此处二次复核）----
     step_bad = [c['tc'] for c in CS if len(c['steps']) != len(c['exp'])]
@@ -189,7 +206,13 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
     fs_src_have = {k: sum(1 for c in CS if c['req'] in fs_req
                           and '功能安全-触发' in c['cover'] and k in c['data'])
                    for k in srcmap}
-    fs_src_bad = [srcmap[k] for k, v in fs_src_have.items() if v == 0]
+    # 多触发源要求只在「本期确有功能安全 REQ」时才成立。fs_req 为空时若照算，
+    # 三个触发源计数全为 0 → fs_src_bad 填满 → 门禁恒不通过，任何没有功能安全
+    # 需求的项目（如纯软件工具类）都永远过不了这一项，属误报。
+    # 注意：这不等于放过「该测功能安全却整个维度标了 N/A」——那种情况由
+    # SKILL.md 硬门禁 16 要求回查 Phase 1.2 的 F 组提问确认，不靠本项拦。
+    fs_src_bad = ([srcmap[k] for k, v in fs_src_have.items() if v == 0]
+                  if fs_req else [])
     fs_elem_bad = []
     for c in CS:
         if '功能安全-触发' in c['cover']:
@@ -240,7 +263,7 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
         dim_bad=dim_bad, sec_gap=sec_gap, num_gap=num_gap, num_dup=num_dup,
         field_bad=field_bad, denom_ok=denom_ok, req_struct_bad=req_struct_bad,
         doc_sec_total=len(doc_secs), section_na_total=len(section_na),
-        fs_req=fs_req, fs_depth_bad=fs_depth_bad, fs_src_have=fs_src_have,
+        tp_degenerate=tp_degenerate, fs_req=fs_req, fs_depth_bad=fs_depth_bad, fs_src_have=fs_src_have,
         fs_src_bad=fs_src_bad, fs_elem_bad=fs_elem_bad,
         ex_inc=ex_inc, ex_library=ex_library, ex_no_body=ex_no_body,
         ex_cell_unrated=ex_cell_unrated, ex_no_basis=ex_no_basis,
@@ -298,6 +321,7 @@ def gates(a):
         ('标题写验证方法数=0', not a['title_meta_bad']),
         ('覆盖类型与测试类型矛盾数=0', not a['cover_bad']),
         ('REQ清单结构性完整', a['req_struct_bad'] == 0),
+        ('测试点未1:1退化', not a['tp_degenerate']),
         ('功能安全深度达标(触发+恢复,多触发源)',
          not (a['fs_depth_bad'] or a['fs_src_bad'] or a['fs_elem_bad'])),
         ('EX交叉五项全通过',

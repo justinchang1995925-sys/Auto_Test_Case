@@ -39,6 +39,11 @@ DIM = {
 _ORDER = ('TP-SEC', 'TP-F', 'TP-P', 'TP-S', 'TP-C', 'TP-UX')
 _PFX2DIM = {p: d for d, (pfxs, *_) in DIM.items() for p in pfxs}
 
+# 顶层按自定义键分组（group_by）时的配色轮转表。六维度各有语义色，
+# 而「按需求编号分组」这类自定义键没有固有语义，故按出现顺序轮转取色，
+# 保证同一份数据每次构建配色稳定（不用 hash，hash 随进程变）。
+_PALETTE = [DIM[d][1:] for d in DIM]
+
 # 列 x 坐标与节点宽度
 X_ROOT, W_ROOT, H_ROOT = 40, 200, 48
 X_DIM, W_DIM, H_DIM = 320, 130, 36
@@ -65,6 +70,19 @@ def _dim_of(tp):
         if tp.startswith(p):
             return _PFX2DIM[p]
     return None
+
+
+def colors_of(label, order=()):
+    """取某顶层分组的配色 (维度fill, 维度stroke, TPfill, TPstroke, TCfill)。
+
+    六维度用各自的语义色；`group_by` 传入的自定义分组键（如需求编号 F17）
+    没有固有语义，按它在 `order` 中的位置轮转取色——用位置而非 hash，
+    这样同一份数据每次构建的配色完全一致，diff 时不会出现无意义的颜色变动。
+    """
+    if label in DIM:
+        return DIM[label][1:]
+    idx = list(order).index(label) if label in order else 0
+    return _PALETTE[idx % len(_PALETTE)]
 
 
 def _node(nid, label, x, y, w, h, fill, stroke, extra=''):
@@ -168,8 +186,19 @@ def _attribute(tps, tp_cases):
 
 
 def derive(cases, extra_tp=None, tp_names=None, extra_cases=(),
-           group_min=0, module_names=None):
+           group_min=0, module_names=None, group_by=None):
     """把用例集派生成思维导图层级数据，drawio 与 mermaid 两种输出共用。
+
+    group_by: 顶层分组方式。
+        None（默认）= 按六维度分组，顶层是 功能/性能/稳定性/兼容性/安全/用户体验。
+        callable    = 接收一条用例 dict、返回分组标签的函数，顶层换成该标签。
+            用于「按需求编号组织」这类场景：产测工具类需求里，读者关心的是
+            「F17 要测哪些方面」，而不是「功能维度下有哪些测试点」——按需求编号
+            分组时一眼能看到每条需求各自的测试面，按维度分组则会把同一条需求的
+            测试点散到六个维度里。
+            维度信息不因此丢失：TP 前缀仍带维度语义，硬门禁 14（TP 维度与用例
+            维度一致）照常校验，只是导图的顶层换了组织轴。
+            返回 None 的用例落入「未分组」，不静默丢弃。
 
     group_min: 某维度的 TP 数 >= 该值时，在「维度」与「测试点」之间插入一层
         「模块」分组。0 = 不分组。**这一层是防重叠/防维度标签跑出屏幕的关键**：
@@ -196,9 +225,13 @@ def derive(cases, extra_tp=None, tp_names=None, extra_cases=(),
         tp_cases[tp].append(c)
         if tp not in tp_desc:
             tp_desc[tp] = c['title']
-        d = _dim_of(tp)
+        d = group_by(c) if group_by else _dim_of(tp)
         if d:
             tp_dim[tp] = d
+        elif group_by:
+            # group_by 返回 None：归入「未分组」而不是丢掉这个 TP。
+            # 静默丢弃会让导图少节点却不报错，与「测试点漏了」无法区分。
+            tp_dim[tp] = '未分组'
     for tp, (d, desc) in (extra_tp or {}).items():
         tp_desc.setdefault(tp, desc)
         tp_dim.setdefault(tp, d)
@@ -208,12 +241,20 @@ def derive(cases, extra_tp=None, tp_names=None, extra_cases=(),
     for tp in tp_cases:
         tp_cases[tp].sort(key=lambda c: (c['req'], c['tc']))
 
-    dims = list(DIM.keys())
     by_dim = collections.defaultdict(list)
     for tp, d in tp_dim.items():
         by_dim[d].append(tp)
     for d in by_dim:
         by_dim[d].sort()
+    if group_by:
+        # 自定义分组：顶层顺序按「组内最小 TP 号」排，与模块层同一口径，
+        # 保证读者自上而下看到的 TP 编号递增；「未分组」固定排在最后。
+        keys = [k for k in by_dim if k != '未分组']
+        dims = sorted(keys, key=lambda k: _tp_no(min(by_dim[k])))
+        if '未分组' in by_dim:
+            dims.append('未分组')
+    else:
+        dims = list(DIM.keys())
 
     # ---- 模块分组：只对 TP 数达阈值的维度生效，避免小维度被拆成一堆单元素组 ----
     groups = {}
@@ -237,7 +278,7 @@ def derive(cases, extra_tp=None, tp_names=None, extra_cases=(),
 
 def build(out_path, cases, root_label, extra_tp=None, diagram_name=None,
           show_cases=True, tp_names=None, extra_cases=(),
-          group_min=0, module_names=None, dedupe_titles=True):
+          group_min=0, module_names=None, dedupe_titles=True, group_by=None):
     """extra_tp: {TP-ID: (维度, 描述)}，用于专项等不在普通用例里的测试点。
     show_cases: 是否展开 TC 节点（评审版默认展开）。
     tp_names:   {TP-ID: 测试点名称}，覆盖「取该 TP 第一条用例标题」的默认派生。
@@ -246,7 +287,8 @@ def build(out_path, cases, root_label, extra_tp=None, diagram_name=None,
     dedupe_titles: TC 标题与其 TP 描述相同时省略标题，见 case_label()。
     """
     dims, groups, tp_desc, tp_cases = derive(
-        cases, extra_tp, tp_names, extra_cases, group_min, module_names)
+        cases, extra_tp, tp_names, extra_cases, group_min, module_names,
+        group_by)
 
     # ---- 叶子驱动的树布局：TC 逐行铺开，各级父节点按自己的子块居中 ----
     dim_y, mod_rows, tp_rows, tc_rows = {}, [], [], []
@@ -287,7 +329,8 @@ def build(out_path, cases, root_label, extra_tp=None, diagram_name=None,
     for i, d in enumerate(dims):
         if not groups.get(d):
             continue
-        fill, stroke = DIM[d][1], DIM[d][2]
+        _c = colors_of(d, dims)
+        fill, stroke = _c[0], _c[1]
         did = 'dim_%d' % i
         dim_id[d] = did
         cells.append(_node(did, d, X_DIM, dim_y[d], W_DIM, H_DIM, fill, stroke,
@@ -295,14 +338,16 @@ def build(out_path, cases, root_label, extra_tp=None, diagram_name=None,
         edges.append(_edge('e_root_%s' % did, 'root', did, stroke))
 
     for mid, d, label, my in mod_rows:
-        fill, stroke = DIM[d][3], DIM[d][2]
+        _c = colors_of(d, dims)
+        fill, stroke = _c[2], _c[1]
         cells.append(_node(mid, label, X_MOD, my, W_MOD, H_MOD, fill, stroke,
                            'fontStyle=1;'))
         edges.append(_edge('e_%s' % mid, dim_id[d], mid, stroke))
 
     tp_id = {}
     for tp, ty, d in tp_rows:
-        tfill, tstroke = DIM[d][3], DIM[d][4]
+        _c = colors_of(d, dims)
+        tfill, tstroke = _c[2], _c[3]
         tid = 'n_' + tp.replace('-', '_')
         tp_id[tp] = tid
         label = '%s %s' % (tp, tp_desc.get(tp, ''))
@@ -310,7 +355,8 @@ def build(out_path, cases, root_label, extra_tp=None, diagram_name=None,
         edges.append(_edge('e_%s' % tid, parent_of.get(tp, dim_id[d]), tid, tstroke))
 
     for c, cy, d, tp in tc_rows:
-        cfill, cstroke = DIM[d][5], DIM[d][4]
+        _c = colors_of(d, dims)
+        cfill, cstroke = _c[4], _c[3]
         cid = 'c_' + c['tc'].replace('-', '_')
         lbl = case_label(c, tp_desc.get(tp) if dedupe_titles else None)
         cells.append(_node(cid, lbl, X_TC, cy, W_TC, H_TC,
@@ -342,16 +388,17 @@ def _mm_id(s):
 
 def mermaid(out_path, cases, root_label, extra_tp=None, show_cases=True,
             tp_names=None, extra_cases=(), group_min=0, module_names=None,
-            dedupe_titles=True):
+            dedupe_titles=True, group_by=None):
     """生成 Mermaid mindmap（.mmd），层级与 build() 完全一致：
-    root -> 六维度 -> [模块] -> 测试点 -> 测试用例。
+    root -> 顶层分组（默认六维度，group_by 可换成需求编号等）-> [模块] -> 测试点 -> 测试用例。
 
     用途：飞书画板只认代码/原生格式，不认 .drawio。写入方式见 SKILL.md，
     要点是 whiteboard-cli --to openapi 管道给 whiteboard +update --overwrite，
     且 --overwrite 会清空画板原有节点，执行前先 +query --output_as raw 备份。
     """
     dims, groups, tp_desc, tp_cases = derive(
-        cases, extra_tp, tp_names, extra_cases, group_min, module_names)
+        cases, extra_tp, tp_names, extra_cases, group_min, module_names,
+        group_by)
 
     lines = ['mindmap', '  root((%s))' % _mm_text(root_label)]
     n_dim = n_mod = n_tp = n_tc = 0

@@ -86,16 +86,30 @@ def _ordered(cases):
 # ---------------- 各 Sheet ----------------
 
 def build_req(ws, req_src, req_links, cases, spec_reqs):
-    n = len(REQ_HEADERS)
+    """需求原子化清单。
+
+    REQ 行可选带第 9 个字段「需求编号」（如 F17）——需求文档自带编号体系时
+    （产测工具类需求常见），把它渲染成**第一列**，读者一眼能看到
+    「F17 拆出了哪几条 REQ」，与按需求编号组织的思维导图对得上。
+
+    **该字段必须放在数据层元组末尾（索引 8），不能插在前面**：
+    `tcgen.audit` 全部按固定位置读 REQ 字段（r[0] ID / r[2] 来源文档 /
+    r[3] 章节 / r[4] 类型 / r[5] 可测性 / r[6] 覆盖状态 / r[7] 备注），
+    在前面插列会让所有索引错位、门禁集体误判。此处只在**渲染时**移到首列。
+    """
+    has_fno = any(len(r) > 8 and (r[8] or '').strip() for r in req_src)
+    headers = (['需求编号'] + REQ_HEADERS) if has_fno else list(REQ_HEADERS)
+    n = len(headers)
     _banner(ws, n, req_links[0], req_links[1:], 78)
-    ws.append(REQ_HEADERS)
+    ws.append(headers)
     covered = set(c['req'] for c in cases) | set(spec_reqs)
     for r in req_src:
-        rid, desc, doc, sec, typ, test, cov, note = r
+        rid, desc, doc, sec, typ, test, cov, note = r[:8]
         if cov == '待覆盖' and rid in covered:
             cov = '已覆盖'
-        ws.append([rid, desc, doc, sec, typ, test, cov, note])
-    style_sheet(ws, REQ_HEADERS, header_row=2)
+        row = [rid, desc, doc, sec, typ, test, cov, note]
+        ws.append(([(r[8] if len(r) > 8 else '')] + row) if has_fno else row)
+    style_sheet(ws, headers, header_row=2)
     ws.cell(1, 1).alignment = Alignment(wrap_text=True, vertical='center')
 
 
@@ -395,14 +409,16 @@ def add_pies(ws, a):
 
 def build(out_path, cases, req_src, req_links, report_note, ex=None,
           spec=None, spec_reqs=(), spec_tr_rows=(), blocked_note='见附表解除条件',
-          fs_source_map=None, spec_companion_reqs=None):
+          fs_source_map=None, spec_companion_reqs=None, tp_name_map=None):
     """构建整本交付件并落盘，返回审计结果 dict。
 
     spec: {'headers':.., 'rows':.., 'detail_headers':.., 'detail_rows':..} 或 None
     spec_companion_reqs: 被专项覆盖、须校验「专项+配套功能用例」的 REQ 全集，
         默认取 spec_reqs。既有普通功能用例又被专项覆盖的 REQ 要列在这里而非 spec_reqs。
     """
-    a = _audit.compute(cases=cases, req_src=req_src, ex=ex,
+    # tp_name_map 透传给审计：测试点 1:1 退化门禁要按「是否给了正式名称」判，
+    # 给了就说明测试点层已做抽象，不能只按用例数比判定（会把合规的单用例测试点误报）。
+    a = _audit.compute(cases=cases, req_src=req_src, ex=ex, tp_name_map=tp_name_map,
                        spec_reqs=spec_reqs, fs_source_map=fs_source_map,
                        spec_companion_reqs=spec_companion_reqs)
     n_spec = len(spec['rows']) if spec else 0

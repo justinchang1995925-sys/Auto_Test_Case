@@ -52,6 +52,25 @@ MODULE_NAMES = {
     'ESTOP': '急停功能安全',
 }
 
+# 测试点正式名称 {TP-ID: 名称}。**归并后一个测试点挂多条用例时必须给名称**：
+# 不给会默认取「首条用例标题」，于是测试点层只是复读用例标题、不成抽象，
+# 思维导图里用例节点还会因去重显示「同测试点主场景」，评审看不出测了哪些方面。
+# 硬门禁「测试点未1:1退化」按此判定：唯一用例且未给名称 = 退化。
+TP_NAMES = {
+    # 样例：真实项目里一个测试点通常挂 2~4 条用例，名称写「该需求要测的一个方面」，
+    # 用例写「这个方面怎么验」。下面每个测试点各挂 1 条只是样例数据规模小。
+    'TP-F-001': '必填项齐全时的保存生效',
+    'TP-F-002': '保存中断的原子性',
+    'TP-F-003': '必填项缺失时的保存拦截',
+    'TP-F-004': '校验解除后的恢复保存',
+    'TP-F-005': '专项覆盖 REQ 的功能可用性',
+    'TP-SEC-101': '面板急停触发',
+    'TP-SEC-102': '急停解除与恢复确认',
+    'TP-SEC-103': '外部回路急停触发',
+    'TP-SEC-104': '软件指令急停触发',
+    'TP-SEC-111': '运动中急停的越程行为',
+}
+
 # 思维导图输出（.mmd 供写入飞书画板；飞书画板不认 .drawio）
 MMD_OUT = '%s测试点.mmd' % PROJECT
 
@@ -72,10 +91,12 @@ def main():
               'detail_headers': spec.SPD_HEADERS, 'detail_rows': spec.SPD_ROWS},
         spec_reqs=reqs.SPEC_REQS,
         spec_tr_rows=reqs.SPEC_TR_ROWS,
+        tp_name_map=TP_NAMES,   # 测试点正式名称，供 1:1 退化门禁判定
         blocked_note=BLOCKED_NOTE,
     )
     mm_kw = dict(root_label=PROJECT, extra_tp=EXTRA_TP,
-                 group_min=GROUP_MIN, module_names=MODULE_NAMES)
+                 group_min=GROUP_MIN, module_names=MODULE_NAMES,
+                 tp_names=TP_NAMES)
     d = drawio.build(DRAWIO_OUT, CASES, **mm_kw)
     m = drawio.mermaid(MMD_OUT, CASES, **mm_kw)
 
