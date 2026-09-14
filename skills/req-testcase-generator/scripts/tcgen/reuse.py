@@ -87,6 +87,15 @@ def scan_duplicates(project_dir='.', skip=('_boot.py',)):
                     and id(node) not in docs and 'chart-create' in node.value:
                 hits.append(('自己拼 chart-create 调用',
                              'tcgen.feishu.rebuild_charts'))
+            # B2. 自己拼画板推送 CLI。`--overwrite` 会清空画板全部节点，
+            # 手写一份必然漏掉「先备份」与「推完强制回读复验」，而漏掉复验的后果
+            # 正是实测踩过的「本地重建成功就宣称导图已更新，线上还停在上一版」。
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                    and id(node) not in docs \
+                    and ('whiteboard +update' in node.value
+                         or 'whiteboard +export' in node.value):
+                hits.append(('自己拼 whiteboard CLI 调用',
+                             'tcgen.board.push / read / diff'))
             # C. 自己赋值定义共享常量／格位表
             elif isinstance(node, ast.Assign):
                 for tgt in node.targets:

@@ -275,7 +275,7 @@ cp936 控制台里，中文输出全成了乱码。正确做法是 `plat.force_u
 
 ## 自检
 
-管道改动后**八个都要跑**，缺一不可。每个都覆盖了别人覆盖不到的代码路径。
+管道改动后**九个都要跑**，缺一不可。每个都覆盖了别人覆盖不到的代码路径。
 
 **① 门禁自检**：模板自带一份门禁全通过的样例数据，应输出「硬门禁: 全部通过」。
 在 skill 仓库内建临时目录即可，`_boot.py` 会自动向上找到 `skills/` 布局，无需配置：
@@ -330,12 +330,12 @@ cd skills/req-testcase-generator/scripts && python test_audit_title.py
 cd skills/req-testcase-generator/scripts && python test_feishu_diff.py
 ```
 
-**⑧ 需求编号列回归**：`python test_xlsx_req_col.py`，应输出「需求编号列回归: 5/5 通过」。
+**⑦ 需求编号列回归**：`python test_xlsx_req_col.py`，应输出「需求编号列回归: 5/5 通过」。
 守「需求编号只能挂在 REQ 元组末尾（索引 8）、渲染时才移到首列」这条位置契约。
 `tcgen.audit` 按固定位置读 REQ 字段，插在前面会让类型列读到可测性、可测性读到覆盖状态——
 **门禁照样跑完只是结论全错，不报任何异常**。含一条反证：编号插首位必然改变 audit 结论。
 
-**⑦ 跨平台回归**：`python test_plat.py`，应输出「跨平台回归: 14/14 通过」。
+**⑧ 跨平台回归**：`python test_plat.py`，应输出「跨平台回归: 14/14 通过」。
 不联网，也不要求本机真的装了 lark-cli。守「同一份 skill 在 Windows 与 Ubuntu 都能跑」：
 lark-cli 定位四条路径（env 覆盖 / `~` 展开 / 找不到时返回裸名字不抛异常 /
 Windows 试 `.cmd`、POSIX 不试）、缺 CLI 的报错含三条修法、中文输出两个方向都不坏、
@@ -344,6 +344,18 @@ Windows 试 `.cmd`、POSIX 不试）、缺 CLI 的报错含三条修法、中文
 `t_default_lark_cli_not_absolute_literal` 双双失败；stdout 改回无条件包 UTF-8 →
 `t_stdout_kept_when_encodable` 失败；`_exec` 不翻译 `FileNotFoundError` →
 `t_exec_translates_missing_cli` 直接崩在裸异常上）。
+
+**⑨ 画板 ID 识别回归**：`python test_board_ids.py`，应输出「画板 ID 识别回归: 4/4 通过」。
+不联网，纯字符串。守 `tcgen.board` 的**比对完整性**——这个正则连续漏报过两次，
+且两次都表现为「差异 0，看着通过」：本地与线上用同一个正则，漏掉的节点两边同时消失。
+①只吃单段 ID 时 `TC-SP-RES-001`/`TC-EX-ESTOP-001` 整批落在比对外（实测漏 25 个）；
+②尾部不许字母时 `TC-STATE-008B` 被截成 `TC-STATE-008` 与同号用例撞键后被覆盖（漏 1 条）。
+已用故障注入验证：正则退回任一旧写法，各有 2 项测试失败。
+**漏报比误报危险**——误报有人来修，漏报没人知道。
+
+**为什么必须单独跑 ⑨**：画板同步只在「改完导图推飞书」时才被调用，
+① ~ ⑧ 全都碰不到 `tcgen.board`；而它一旦漏节点，交付件会在「已验证一致」的假象下
+带着缺口发出去。
 
 **为什么必须单独跑 ④**：`diff_sheets` 只在「改完数据同步飞书」时才被调用，
 ① ② ③ 全都碰不到它；而它报出的单元格地址是人照着去改的依据，**地址错一位就会改错格子**

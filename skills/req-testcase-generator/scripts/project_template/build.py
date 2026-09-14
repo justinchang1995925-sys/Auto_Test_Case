@@ -92,6 +92,8 @@ def main():
         spec_reqs=reqs.SPEC_REQS,
         spec_tr_rows=reqs.SPEC_TR_ROWS,
         tp_name_map=TP_NAMES,   # 测试点正式名称，供 1:1 退化门禁判定
+        # 资源观测交付信息（门禁 19）。有专项测试时必填；本期无专项可传 None。
+        res=spec.RES,
         blocked_note=BLOCKED_NOTE,
     )
     mm_kw = dict(root_label=PROJECT, extra_tp=EXTRA_TP,

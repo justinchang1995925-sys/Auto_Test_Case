@@ -35,7 +35,37 @@ CLEAN = dict(
     req_struct_bad=0, tp_degenerate=[], fs_depth_bad=[], fs_src_bad=[], fs_elem_bad=[],
     ex_no_body=[], ex_cell_unrated=[], ex_no_basis=[], ex_must_gap=[],
     ex_ref_bad=[], pri_incons=[],
+    res_ok=True, res_bad=[], res={}, res_exempt=None,
 )
+
+
+def t_clean_covers_all_gate_keys():
+    """CLEAN 必须覆盖 gates() 所需的全部键。
+
+    这份字面量是与 compute() 的脱钩点：skill 每加一条门禁，gates() 就多读一个键，
+    而这里不会自动跟上——上一次加门禁 19 就是直接 KeyError 才发现的（踩过）。
+    有了这条断言，缺键会报出「缺哪个键」而不是在别的用例里炸出 KeyError。
+    """
+    from tcgen import audit as _a
+
+    class _Probe(dict):
+        """记录被读过的键；缺键返回安全值而不抛，以便一次收集全部缺失。"""
+
+        def __init__(self, base):
+            dict.__init__(self, base)
+            self.missing = []
+
+        def __getitem__(self, k):
+            if k not in self:
+                self.missing.append(k)
+                return []          # 空列表对 gates() 的 not/== 判断都安全
+            return dict.__getitem__(self, k)
+
+    p = _Probe(CLEAN)
+    _a.gates(p)
+    assert not p.missing, 'CLEAN 缺 gates() 所需键: %s' % ','.join(
+        sorted(set(p.missing)))
+    return 'gates() 所需 %d 个键齐全' % len(_a.gates(dict(CLEAN)))
 
 DEFECT_TITLE = '质量缺陷类型'
 
@@ -118,16 +148,20 @@ def t_csv_width_unchanged():
 
 
 def main():
-    ts = [t_zero_block_skipped, t_nonzero_block_still_drawn,
-          t_aux_block_still_written, t_no_note_text_in_cells,
-          t_csv_width_unchanged]
+    # 自动收集 t_* 函数，**不手写清单**：手写的那份会在新增测试后悄悄落后——
+    # 加了测试却忘记登记，它就永远不跑，看起来还是「全绿」（踩过）。
+    g = globals()
+    ts = [g[k] for k in sorted(g) if k.startswith('t_') and callable(g[k])]
     bad = 0
     for t in ts:
+        # 捕 Exception 而非只捕 AssertionError：CLEAN 缺键时 add_pies 抛的是
+        # KeyError，只捕断言会让它逃出 main、脚本崩溃且**退出码仍为 0**，
+        # CI 里看起来是通过的（踩过，靠故障注入才发现）。
         try:
             print('  PASS  %-32s %s' % (t.__name__, t()))
-        except AssertionError as e:
+        except Exception as e:                       # noqa: BLE001
             bad += 1
-            print('  FAIL  %-32s %s' % (t.__name__, e))
+            print('  FAIL  %-32s %s: %s' % (t.__name__, type(e).__name__, e))
     print('饼图生成回归: %d/%d 通过' % (len(ts) - bad, len(ts)))
     return 1 if bad else 0
 

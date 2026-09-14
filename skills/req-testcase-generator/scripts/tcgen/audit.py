@@ -55,8 +55,100 @@ TECH_TTYPE_OK = {
 
 
 
+# 门禁 19：资源观测最低必采项。缺任一项即判不通过。
+# 取值依据实测（RK3588/PREEMPT_RT）：实时线程核占用须取最大值而非均值（控制环被挤是
+# 单核事件，均值会摊平）；隔离核正常恒 0，被侵占是最灵敏的告警位；无 swap 的产品
+# 承诺量超配后触发即 OOM，故 committed 与 oom_kill 必采。
+RES_CPU_MIN = ('cpu_all', 'cpu_rt_max', 'temp', 'freq')
+RES_MEM_MIN = ('mem_avail', 'anon', 'committed', 'slab_unreclaim',
+               'pagetables', 'oom_kill')
+RES_VERDICT_KINDS = ('瞬时', '趋势', '状态')
+
+
+def _spec_tcs(cases, spec):
+    """本期全部专项用例号。**两个来源都要看**：
+
+    专项用例走 spec 两表，**不在 dsl.CASES 里**；早先只扫 cases，样例项目明明有
+    TC-SP-PERF-001 却判「无专项」，门禁 19 以错误理由通过、等于从未生效（踩过）。
+    仍保留扫 cases 的分支：有些项目把专项用例也塞进 CASES 以便进追溯矩阵。
+    """
+    out = {str(c.get('tc', '')) for c in cases
+           if str(c.get('tc', '')).startswith('TC-SP-')}
+    for row in ((spec or {}).get('rows') or ()):
+        # 专项主表首列固定是用例序号
+        first = str(row[0]) if len(row) else ''
+        if first.startswith('TC-SP-'):
+            out.add(first)
+    return out
+
+
+def _res_gate(cases, res, spec=None):
+    """门禁 19 的八项核对，返回违例说明列表（空 = 通过）。
+
+    只有本期确实存在专项用例（TC-SP-*）时才要求资源观测——没有专项测试的项目
+    （如纯 Web 功能测试）不受此门禁约束。
+    """
+    spec_tcs = _spec_tcs(cases, spec)
+    if not spec_tcs:
+        return []
+    if not res:
+        return ['本期有专项用例但未提供资源观测项（门禁 19 要求 TC-SP-RES-xxx）']
+
+    bad = []
+    tc = str(res.get('tc') or '')
+    if not tc.startswith('TC-SP-RES'):
+        bad.append('资源观测用例编号缺失或不合规（须 TC-SP-RES-xxx，收到 %r）' % tc)
+    if not res.get('req') or not res.get('tp'):
+        bad.append('资源观测项缺自己的 REQ 或 TP')
+    attached = list(res.get('attached') or ())
+    if not attached:
+        bad.append('未写明依附的专项用例编号（前置条件须显式依赖）')
+    else:
+        # 依附对象必须是真实存在的专项用例，否则填个不存在的号也能过
+        ghost = [t for t in attached if t not in spec_tcs and t != tc]
+        if ghost:
+            bad.append('依附的专项用例不存在: %s（本期专项用例: %s）'
+                       % (','.join(ghost),
+                          ','.join(sorted(spec_tcs - {tc})) or '无'))
+
+    miss_cpu = [k for k in RES_CPU_MIN if k not in set(res.get('cpu_keys') or ())]
+    miss_mem = [k for k in RES_MEM_MIN if k not in set(res.get('mem_keys') or ())]
+    if miss_cpu:
+        bad.append('CPU 最低必采项缺失: %s' % ','.join(miss_cpu))
+    if miss_mem:
+        bad.append('内存最低必采项缺失: %s' % ','.join(miss_mem))
+
+    miss_kind = [k for k in RES_VERDICT_KINDS
+                 if k not in set(res.get('verdict_kinds') or ())]
+    if miss_kind:
+        bad.append('判定口径缺失: %s（三类须齐）' % ','.join(miss_kind))
+
+    if not res.get('threshold_sources'):
+        bad.append('未写明阈值来源（须读 sched_rt_*/trip_point_0_temp//proc/meminfo）')
+    if res.get('hardcoded_thresholds'):
+        bad.append('阈值硬编码: %s（须写来源与口径，不写死数值）'
+                   % ','.join(map(str, res['hardcoded_thresholds'])))
+    # 结论：允许「已定义但未执行」这个合法状态，但必须显式标 Blocked + 写解除条件。
+    # 不留这条路，交付阶段（用例刚定义、尚未跑 100 杯）就只能填一个假的 PASS/WARN
+    # 去骗过门禁 —— 那正是本 skill 定义的门禁造假。执行后再改成实测结论。
+    concl = str(res.get('conclusion') or '').upper()
+    if concl == 'BLOCKED':
+        if not res.get('unblock'):
+            bad.append('资源判定结论标 Blocked 但未写解除条件'
+                       '（须写明何时可出结论，如「TC-SP-STAB-001 执行完毕后」）')
+    elif concl not in ('PASS', 'WARN', 'FAIL'):
+        bad.append('资源判定结论缺失（只采不判视为未完成；'
+                   '尚未执行请标 Blocked 并写解除条件，不要填假结论）')
+    if not res.get('agent_cost'):
+        bad.append('未自证采集器扰动（须含采集器自身 CPU/RSS/fork 证据）')
+    if res.get('mixed_into'):
+        bad.append('资源指标混入既有专项用例判定标准: %s（违反一案一验）'
+                   % ','.join(res['mixed_into']))
+    return bad
+
+
 def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
-            spec_companion_reqs=None, tp_name_map=None):
+            spec_companion_reqs=None, tp_name_map=None, res=None, spec=None):
     """返回全部门禁数与违例清单。
 
     cases    : dsl.add 收集的用例列表
@@ -67,12 +159,21 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
     spec_companion_reqs: 被专项测试覆盖的 REQ 全集，即须校验「专项+配套功能用例」的集合。
                通常 ⊇ spec_reqs——有些 REQ 既有普通功能用例、又被专项覆盖（如成功率类），
                它们要参与功能深度判定，但同样须有配套功能用例。默认取 spec_reqs。
+    res      : 资源观测交付信息（门禁 19）。None 表示项目未提供，若本期有专项用例则判缺失。
+               形如 dict(tc='TC-SP-RES-001', req='REQ-0NN', tp='TP-S-0NN',
+                        attached=['TC-SP-STAB-001'], cpu_keys=[...], mem_keys=[...],
+                        verdict_kinds=['瞬时','趋势','状态'], threshold_sources=[...],
+                        hardcoded_thresholds=[...],
+                        conclusion='PASS/WARN/FAIL/Blocked',
+                        unblock='...',   # conclusion=Blocked 时必填
+                        agent_cost='...', mixed_into=[...])
     """
     CS = cases
     tp_name_map = tp_name_map or {}
     spec_reqs = set(spec_reqs)
     companion = set(spec_companion_reqs) if spec_companion_reqs else set(spec_reqs)
     srcmap = fs_source_map or FS_SOURCES
+    res_req = (res or {}).get('req')
 
     # ---- 覆盖率 ----
     testable = [r[0] for r in req_src if r[5] == '可测' and r[6] != '阻塞']
@@ -130,9 +231,13 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
     tot = len(CS)
 
     # 专项 REQ 须同时有专项用例与功能可用性用例（只验功能走通，不判指标）
+    # 窄豁免：资源观测 REQ（res_req）无独立业务功能可验——「采集器能取到一次样本」
+    # 属工具自检而非被测产品功能，硬补一条即凑数（SKILL.md 4.1 明禁）。
+    # 豁免只对这一条 REQ 生效，理由随审计输出，防止悄悄扩大到其它专项 REQ。
     spec_companion_bad = [r for r in sorted(companion)
-                          if not any(c['req'] == r and c['ttype'] == '功能测试'
-                                     for c in CS)]
+                          if r != res_req
+                          and not any(c['req'] == r and c['ttype'] == '功能测试'
+                                      for c in CS)]
     spec_ok = not spec_companion_bad
 
     risk_map = {'高': ('P0', 'P1'), '中': ('P2',), '低': ('P3',)}
@@ -251,7 +356,11 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
     nonfs = [c for c in CS if not is_fs(c)]
     pri_nonfs = {p: sum(c['pri'] == p for c in nonfs) for p in ('P0', 'P1', 'P2', 'P3')}
 
+    res_bad = _res_gate(CS, res, spec)
+
     return dict(
+        res=res or {}, res_bad=res_bad, res_ok=not res_bad,
+        res_exempt=res_req,
         testable=testable, blocked=blocked_req, na=na_req, uncovered=uncovered,
         depth_bad=depth_bad, func_reqs=sorted(func),
         collapse_tp=collapse_tp, collapse_req=collapse_req, tp_no_tc=tp_no_tc,
@@ -287,7 +396,23 @@ def gate_notes(a):
         '反模式(步骤预期错位)=0': 'dsl.C() 构建期assert已强制步骤:预期=1:1,此处二次复核',
         '专项REQ配套功能用例齐全':
             ('被专项覆盖的REQ(%s)均含功能可用性用例' % (ids('spec_companion', 8) or '本期无')
+             + ('' if not a['res_exempt'] else
+                ';%s(资源观测)按门禁19豁免:无独立业务功能可验,补一条即凑数'
+                % a['res_exempt'])
              if a['spec_ok'] else '缺配套:' + ids('spec_companion_bad')),
+        '资源观测覆盖达标(有专项即强制)':
+            # 结论为 Blocked 时必须带上解除条件：只写「Blocked」等于挂起无期限，
+            # 报告读者看不出何时能出结论。
+            ('专项运行期同步采CPU/内存(%s依附%s),三类判定齐,阈值读机器,结论%s%s'
+             % (a['res'].get('tc', '-'),
+                '/'.join(a['res'].get('attached') or ['-']),
+                a['res'].get('conclusion', '-'),
+                ('(解除条件:%s)' % a['res']['unblock'])
+                if str(a['res'].get('conclusion', '')).upper() == 'BLOCKED'
+                and a['res'].get('unblock') else '')
+             if a['res_ok'] and a['res'] else
+             ('本期无专项用例,该门禁不适用' if a['res_ok']
+              else '违例:' + ';'.join(a['res_bad']))),
         'TP维度与用例维度错配=0': '遍历TC比对(测试类型→维度)与(TP前缀→维度)',
         '标题写验证方法数=0':
             '正则查「手段介词+元动词收尾」(如「…由再次点击验证」);标题须写场景+预期'
@@ -327,5 +452,6 @@ def gates(a):
         ('EX交叉五项全通过',
          not (a['ex_no_body'] or a['ex_cell_unrated'] or a['ex_no_basis']
               or a['ex_must_gap'] or a['ex_ref_bad'])),
+        ('资源观测覆盖达标(有专项即强制)', a['res_ok']),
         ('优先级与风险一致', not a['pri_incons']),
     ]

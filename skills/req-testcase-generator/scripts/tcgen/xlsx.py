@@ -409,18 +409,25 @@ def add_pies(ws, a):
 
 def build(out_path, cases, req_src, req_links, report_note, ex=None,
           spec=None, spec_reqs=(), spec_tr_rows=(), blocked_note='见附表解除条件',
-          fs_source_map=None, spec_companion_reqs=None, tp_name_map=None):
+          fs_source_map=None, spec_companion_reqs=None, tp_name_map=None,
+          res=None):
     """构建整本交付件并落盘，返回审计结果 dict。
 
     spec: {'headers':.., 'rows':.., 'detail_headers':.., 'detail_rows':..} 或 None
     spec_companion_reqs: 被专项覆盖、须校验「专项+配套功能用例」的 REQ 全集，
         默认取 spec_reqs。既有普通功能用例又被专项覆盖的 REQ 要列在这里而非 spec_reqs。
+    res: 资源观测交付信息（门禁 19）。有专项测试时必填，字段见 audit.compute 文档。
     """
     # tp_name_map 透传给审计：测试点 1:1 退化门禁要按「是否给了正式名称」判，
     # 给了就说明测试点层已做抽象，不能只按用例数比判定（会把合规的单用例测试点误报）。
+    # spec 也必须透传：门禁 19 判「本期有无专项测试」要看专项数据，
+    # 而专项用例**不在 cases（dsl.CASES）里**——它们走 spec 两表。
+    # 早先只按 cases 判，样例项目明明有 TC-SP-PERF-001 却报「无专项、门禁不适用」，
+    # 门禁以错误理由通过、等于从未生效（踩过，靠核对自检输出才发现）。
     a = _audit.compute(cases=cases, req_src=req_src, ex=ex, tp_name_map=tp_name_map,
                        spec_reqs=spec_reqs, fs_source_map=fs_source_map,
-                       spec_companion_reqs=spec_companion_reqs)
+                       spec_companion_reqs=spec_companion_reqs,
+                       res=res, spec=spec)
     n_spec = len(spec['rows']) if spec else 0
 
     wb = Workbook()

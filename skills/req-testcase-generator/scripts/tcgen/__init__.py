@@ -4,11 +4,11 @@
 分层（项目侧只写数据层，其余照搬）：
     数据层   项目自己的 cases_*.py / reqs.py / d_ex.py   ← 每个项目重写
     构建层   tcgen.dsl / tcgen.audit / tcgen.xlsx / tcgen.drawio
-    同步层   tcgen.feishu
+    同步层   tcgen.feishu（表格）/ tcgen.board（画板思维导图）
 
 约束：本包内不得出现任何项目专有的常量（REQ 正文、飞书 token、文件名、
 业务阈值）。项目专有的东西一律由调用方传参，见 project_template/。
 """
-from . import audit, drawio, dsl, feishu, plat, xlsx   # noqa: F401
+from . import audit, board, drawio, dsl, feishu, plat, xlsx   # noqa: F401
 
-__all__ = ['dsl', 'audit', 'xlsx', 'drawio', 'feishu', 'plat']
+__all__ = ['dsl', 'audit', 'xlsx', 'drawio', 'feishu', 'board', 'plat']
