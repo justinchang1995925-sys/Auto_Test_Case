@@ -326,6 +326,10 @@ def audit_rows(a, ex=None, n_spec=0, blocked_note='见附表解除条件'):
         ('自查回执', '覆盖类型与测试类型矛盾数', '%d' % len(a['cover_bad']),
          '= |{TC: cover填了维度名且≠ttype推出的维度}|;视角类(正向/反向/边界/异常)与维度无关不计'
          + ('' if not a['cover_bad'] else ';违例:' + _join(a['cover_bad']))),
+        ('自查回执', '疑似重复用例组数(软提示)', '%d' % len(a['dup_cand']),
+         '判据=操作步骤与预期结果逐条完全相同;只比步骤与预期不比标题'
+         + ('' if not a['dup_cand'] else
+            ';待确认:' + '/'.join('+'.join(g) for g in a['dup_cand'][:3]))),
         ('自查回执', '技法与测试类型不相容数(软提示)', '%d' % len(a['tech_warn']),
          '= |{TC: tech∈TECH_TTYPE_OK 且 ttype∉白名单}|;边界情形确实存在故只提示不阻断'
          + ('' if not a['tech_warn'] else ';待确认:' + _join(a['tech_warn']))),

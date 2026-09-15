@@ -346,6 +346,64 @@ def t_doc_a_group_matches_gates():
     return 'A 组 %d 行与 gates() 项数一致' % len(rows)
 
 
+
+# ---------- 疑似重复用例（软提示）----------
+def _mkfull(tc, steps, exp, req='REQ-001', tp='TP-F-001', data='-'):
+    return dict(tc=tc, pri='P1', title=tc + ' 标题', ttype='功能测试',
+                pre=['1. 前置'], steps=steps, exp=exp, req=req, tp=tp,
+                cover='正向', risk='中', rbasis='依据', tech='场景法',
+                data=data, status='Ready', unblock='无', remark='-')
+
+
+def t_dup_catches_identical_steps_and_exp():
+    """步骤与预期逐条相同即判疑似重复，跨 REQ 也要抓到。
+
+    实测踩过：为给 REQ-012 补正向面，复制了 REQ-010 的用例改个 REQ 号——
+    两条前置/步骤/预期一字不差，评审看不出为什么要跑两遍。
+    深度门禁要求补某方向覆盖时，复制邻近用例交差是最省事的做法，故必然复发。
+    """
+    cs = [_mkfull('TC-A-001', ['1. 点击运行'], ['1. 判 PASS']),
+          _mkfull('TC-B-001', ['1. 点击运行'], ['1. 判 PASS'], req='REQ-002')]
+    got = audit.duplicate_candidates(cs)
+    assert got == [['TC-A-001', 'TC-B-001']], '未抓到跨 REQ 的重复: %s' % got
+    a = audit.compute(cases=cs, req_src=REQ)
+    assert a['dup_cand'] == got, 'compute 未输出 dup_cand'
+    return '跨 REQ 的完全重复被抓到'
+
+
+def t_dup_not_blocking():
+    """疑似重复是**软提示**，不得进 gates()——会误报的检查用来阻断反而削弱其他门禁。"""
+    cs = [_mkfull('TC-A-001', ['1. 点击'], ['1. 成功']),
+          _mkfull('TC-B-001', ['1. 点击'], ['1. 成功'], req='REQ-002')]
+    a = audit.compute(cases=cs, req_src=REQ)
+    assert a['dup_cand'], '前置不成立：本例应有重复'
+    names = [n for n, _ in audit.gates(a)]
+    assert not any('重复' in n for n in names), \
+        'dup_cand 进了硬门禁：%s' % [n for n in names if '重复' in n]
+    return '仅软提示，未进 gates()'
+
+
+def t_dup_no_false_positive_on_different_steps():
+    """步骤或预期有任一条不同就不算重复——判据是逐条相同，不做模糊匹配。"""
+    cs = [_mkfull('TC-A-001', ['1. 点击运行'], ['1. 判 PASS']),
+          _mkfull('TC-B-001', ['1. 点击运行'], ['1. 判 FAIL']),
+          _mkfull('TC-C-001', ['1. 点击运行', '2. 查看日志'], ['1. 判 PASS', '2. 有留痕'])]
+    got = audit.duplicate_candidates(cs)
+    assert got == [], '预期或步骤不同却报重复: %s' % got
+    return '步骤/预期不同不误报'
+
+
+def t_dup_ignores_title_difference():
+    """只比步骤与预期，不比标题——标题措辞不同而实质相同正是本次踩到的形态。"""
+    a1 = _mkfull('TC-A-001', ['1. 点击运行'], ['1. 判 PASS'])
+    a2 = _mkfull('TC-B-001', ['1. 点击运行'], ['1. 判 PASS'], req='REQ-002')
+    a1['title'] = '上传基准后版本比对一致时判 PASS'
+    a2['title'] = '版本全部与基准一致时不报差异且判 PASS'
+    got = audit.duplicate_candidates([a1, a2])
+    assert got == [['TC-A-001', 'TC-B-001']], '标题不同就漏检了: %s' % got
+    return '标题措辞不同仍被判重复'
+
+
 def main():
     ts = [t_title_meta_catches, t_title_meta_no_false_positive,
           t_cover_mismatch_catches, t_cover_allows_cross_dimension,
@@ -359,7 +417,10 @@ def main():
           t_fno_excludes_blocked_and_untestable,
           t_fno_counts_spec_only_requirement,
           t_fno_note_states_its_blind_spot,
-          t_doc_a_group_matches_gates]
+          t_doc_a_group_matches_gates,
+          t_dup_catches_identical_steps_and_exp, t_dup_not_blocking,
+          t_dup_no_false_positive_on_different_steps,
+          t_dup_ignores_title_difference]
     bad = 0
     for t in ts:
         try:

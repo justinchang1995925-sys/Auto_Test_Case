@@ -97,6 +97,33 @@ def degenerate_tps(cases, tp_name_map=None):
                   if len(lst) == 1 and not (tp_name_map or {}).get(tp))
 
 
+def duplicate_candidates(cases):
+    """疑似重复用例的分组清单（空 = 无重复）。**软提示，不阻断**。
+
+    判据取「操作步骤序列 + 预期结果序列**逐条完全相同**」——两条用例连怎么做、
+    期望什么都一字不差，那它们测的就是同一件事，哪怕挂在不同 REQ/TP 下。
+    只比步骤与预期、不比标题：标题可以措辞不同而实质相同（实测正是这种）。
+
+    为什么必然会有人踩：**深度门禁要求某 REQ 补某方向覆盖时，最省事的做法就是
+    复制邻近用例改个 REQ 号交差**。实测踩过：为给 REQ-012（讲「不符时报错」）
+    补正向面，复制了 REQ-010 的「版本一致判 PASS」——而「版本一致」本就是
+    REQ-010 的地盘，REQ-012 的正向面应是「报错内容本身完整正确」。
+    两条用例前置/步骤/预期一字不差，评审时看不出为什么要跑两遍。
+
+    **只作软提示**：确实存在「步骤相同但测试数据不同」的合规写法（同一操作换参数），
+    此时 steps/exp 可能雷同而 data 不同。用来阻断会误报，
+    而会误报的检查很快就没人看了（见 pipeline.md 对 text_cells 的同类判断）。
+    返回 [[tc, ...], ...]，每组为一批互为重复的 TC，供人工判断该删哪条或改写。
+    """
+    import collections as _c
+    buckets = _c.defaultdict(list)
+    for c in cases:
+        key = (tuple(x.strip() for x in c['steps']),
+               tuple(x.strip() for x in c['exp']))
+        buckets[key].append(c['tc'])
+    return sorted([sorted(v) for v in buckets.values() if len(v) > 1])
+
+
 def cover_conflicts(cases):
     """覆盖类型 ↔ 测试类型 跨维度矛盾的 TC 清单（空 = 无矛盾）。
 
@@ -347,6 +374,9 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
     # ---- 软提示 C：设计技法 ↔ 测试类型 相容性（列出待人工确认，不阻断）----
     # 技法决定了用例在测什么，与测试类型应当相容；但边界情形确实存在
     # （如状态迁移技法配边界测试），故只提示不阻断，避免误报稀释硬门禁可信度。
+    # 软提示：疑似重复用例（步骤+预期逐条相同），不进 gates()
+    dup_cand = duplicate_candidates(CS)
+
     tech_warn = [c['tc'] for c in CS
                  if c['tech'] in TECH_TTYPE_OK
                  and c['ttype'] not in TECH_TTYPE_OK[c['tech']]]
@@ -452,6 +482,7 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
         pri_incons=pri_incons,
         title_meta_bad=title_meta_bad, cover_bad=cover_bad,
         ttype_bad=ttype_bad, cover_enum_bad=cover_enum_bad, tech_warn=tech_warn,
+        dup_cand=dup_cand,
         dim_bad=dim_bad, sec_gap=sec_gap, num_gap=num_gap, num_dup=num_dup,
         field_bad=field_bad, denom_ok=denom_ok, req_struct_bad=req_struct_bad,
         doc_sec_total=len(doc_secs), section_na_total=len(section_na),
