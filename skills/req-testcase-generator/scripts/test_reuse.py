@@ -94,6 +94,32 @@ def t_copied_const_caught():
     return '抄 TITLE_META_RX 被抓到'
 
 
+def t_own_gate_calc_caught():
+    """自己算门禁量 = 自建了一套审计，skill 新增门禁不会自动生效。
+
+    这是最要命的盲区：其余规则只查建图/画板/常量抄写，查不出「项目自建
+    一整套 compute_audit」。实测某项目自建 158 行审计实现、复用检查报 OK，
+    代价是 skill 三次新增门禁有两次**静默失效**——交付件照常产出、报告照常
+    写「全部通过」，只是少查了一类问题（某次因此积累 29 个存量违例才被发现）。
+    """
+    for var in ('depth_bad', 'tp_degenerate', 'cover_bad', 'res_bad'):
+        src = '%s = [c for c in CS if 1]\n' % var
+        got = scan(src)
+        assert got and var in got[0][1], '未抓到自算门禁量 %s: %s' % (var, got)
+    return '4 种自算门禁量被抓到'
+
+
+def t_gate_var_read_not_flagged():
+    """只是**读取** a[键] 不算违例——那是正常消费 compute() 的结果。
+
+    只有「自己赋值」才是抄一份。这条守着不误报：报告行与门禁清单都要读这些键，
+    若把读取也算违例，规则会把所有正常用法拦下来，很快就没人看了。
+    """
+    src = ('a = compute()\n'
+           'bad = [n for n in a[' + chr(39) + 'depth_bad' + chr(39) + ']]\n')
+    assert not scan(src), '读取被误判为抄一份: %s' % scan(src)
+    return '读取 a[键] 不误报'
+
 def t_hardcoded_tiles_caught():
     """写死格位表 = 抄了 CHART_TILES，位置一改两边就错开。"""
     src = ("TILES = ('J1', 'P16', 'J31', 'P31')\n")
@@ -113,11 +139,11 @@ def t_template_is_clean():
 
 
 def main():
-    ts = [t_priority_p1_not_tile, t_import_is_not_copy,
-          t_docstring_mention_not_copy, t_using_shared_tiles_ok,
-          t_own_piechart_caught, t_own_chart_create_caught,
-          t_copied_const_caught, t_hardcoded_tiles_caught,
-          t_template_is_clean]
+    # 自动收集 t_* 函数，**不手写清单**：手写的那份会在新增测试后悄悄落后——
+    # 加了测试却忘记登记，它就永远不跑，看起来还是「全绿」（本文件与
+    # test_xlsx_pies.py 都踩过这一条）。
+    g = globals()
+    ts = [g[k] for k in sorted(g) if k.startswith('t_') and callable(g[k])]
     bad = 0
     for t in ts:
         try:

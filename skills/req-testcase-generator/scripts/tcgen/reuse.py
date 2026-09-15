@@ -26,9 +26,35 @@ import re
 #: 只能由 tcgen 定义的常量：项目文件里出现 `X = ...` 即为抄了一份
 COPIED_CONSTS = {
     'TITLE_META_RX': 'tcgen.audit',
-    'TTYPE_COVER': 'tcgen.audit',
+    'TTYPE_COVER': 'tcgen.audit',      # 已废弃常量；仍列着以便抓到照抄旧版的项目
     'TECH_TTYPE_OK': 'tcgen.audit',
     'CHART_TILES': 'tcgen.feishu.CHART_TILES',
+}
+
+#: 门禁量名 -> 该由哪个共享实现算。项目侧**自己赋值**这些名字即判违例。
+#: 这条规则补的是最要命的盲区：前三条规则只查建图/画板/常量抄写，
+#: 查不出「项目自建一整套 compute_audit」。实测某项目自建 158 行审计实现，
+#: 复用检查报 OK，而代价是 skill 每次新增门禁都不会自动生效——
+#: 踩过三次，其中两次是**静默**的（交付件照常产出、报告照常写「全部通过」，
+#: 只是少查了一类问题，某次因此积累了 29 个存量违例才被发现）。
+GATE_VARS = {
+    'depth_bad': 'tcgen.audit.compute()',
+    'collapse_tp': 'tcgen.audit.compute()',
+    'collapse_req': 'tcgen.audit.compute()',
+    'tp_no_tc': 'tcgen.audit.compute()',
+    'step_bad': 'tcgen.audit.compute()',
+    'dim_bad': 'tcgen.audit.compute()',
+    'title_meta_bad': 'tcgen.audit.compute()',
+    'cover_bad': 'tcgen.audit.cover_conflicts()',
+    'ttype_bad': 'tcgen.audit.enum_violations()',
+    'cover_enum_bad': 'tcgen.audit.enum_violations()',
+    'tp_degenerate': 'tcgen.audit.degenerate_tps()',
+    'req_struct_bad': 'tcgen.audit.compute()',
+    'fs_depth_bad': 'tcgen.audit.compute()',
+    'fs_src_bad': 'tcgen.audit.compute()',
+    'ex_must_gap': 'tcgen.audit.compute()',
+    'fno_no_case': 'tcgen.audit.compute()',
+    'res_bad': 'tcgen.audit._res_gate()',
 }
 
 #: 格位形如 J16/P31：列 J 或 P + **两位**行号。
@@ -102,6 +128,10 @@ def scan_duplicates(project_dir='.', skip=('_boot.py',)):
                     if isinstance(tgt, ast.Name) and tgt.id in COPIED_CONSTS:
                         hits.append(('自己定义 %s' % tgt.id,
                                      COPIED_CONSTS[tgt.id]))
+                    # D. 自己算门禁量（该由 compute()/共享函数算）
+                    elif isinstance(tgt, ast.Name) and tgt.id in GATE_VARS:
+                        hits.append(('自己计算门禁量 %s' % tgt.id,
+                                     GATE_VARS[tgt.id]))
                     elif isinstance(tgt, ast.Name) and _is_tile_tuple(node.value):
                         hits.append(('自己写死格位表 %s' % tgt.id,
                                      'tcgen.feishu.CHART_TILES'))

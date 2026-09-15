@@ -314,9 +314,24 @@ def audit_rows(a, ex=None, n_spec=0, blocked_note='见附表解除条件'):
          '= |{TC: |TC→TP集合|>1}| + |{TC: |TC→REQ集合|>1}|;两张映射均遍历全量用例构建'),
         ('自查回执', '反模式命中数', '%d' % len(a['step_bad']),
          '= |{TC: len(步骤)≠len(预期)}|;dsl.C() 的 assert 在构建期已强制1:1,此处为二次遍历复核'),
+        ('自查回执', '标题写验证方法数', '%d' % len(a['title_meta_bad']),
+         '= |{TC: 标题命中「手段介词+元动词收尾」正则}|;只判句末,排除验证码/校验和这类元动词作名词'
+         + ('' if not a['title_meta_bad'] else ';违例:' + _join(a['title_meta_bad']))),
+        ('自查回执', '测试类型/覆盖类型枚举非法数',
+         '%d' % (len(a['ttype_bad']) + len(a['cover_enum_bad'])),
+         '= |{TC: ttype∉TTYPE_OK}| + |{TC: cover∉COVER_OK}|;'
+         '测试类型只收六维度,反向/边界/异常属覆盖类型'
+         + ('' if not (a['ttype_bad'] or a['cover_enum_bad']) else
+            ';违例:' + _join(list(a['ttype_bad']) + list(a['cover_enum_bad'])))),
+        ('自查回执', '覆盖类型与测试类型矛盾数', '%d' % len(a['cover_bad']),
+         '= |{TC: cover填了维度名且≠ttype推出的维度}|;视角类(正向/反向/边界/异常)与维度无关不计'
+         + ('' if not a['cover_bad'] else ';违例:' + _join(a['cover_bad']))),
+        ('自查回执', '技法与测试类型不相容数(软提示)', '%d' % len(a['tech_warn']),
+         '= |{TC: tech∈TECH_TTYPE_OK 且 ttype∉白名单}|;边界情形确实存在故只提示不阻断'
+         + ('' if not a['tech_warn'] else ';待确认:' + _join(a['tech_warn']))),
         ('自查回执', 'TP维度错配数', '%d' % len(a['dim_bad']),
-         '= |{TC: 测试类型→维度 ≠ TP前缀→维度}|;映射表TT2DIM(功能/接口/反向/异常/边界→功能)'
-         '与PFX2DIM(TP-SEC→安全等)'),
+         '= |{TC: 测试类型→维度 ≠ TP前缀→维度}|;映射表TT2DIM(功能/接口测试→功能)'
+         '与PFX2DIM(TP-SEC→安全等);反向/边界/异常属覆盖类型不参与此映射'),
         ('自查回执', 'REQ清单结构性问题数', '%d' % a['req_struct_bad'],
          '= |章节反查差集| + |断号| + |重号| + |字段违例| + (分母不自洽?1:0);'
          '章节差集=文档章节全集(%d)−REQ已引用−已标N/A(%d)'
