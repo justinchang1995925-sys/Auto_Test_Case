@@ -11,7 +11,7 @@
 import collections
 import re
 
-from .dsl import PRI_RISK, TT2DIM, tp_dim
+from .dsl import COVER_OK, PRI_RISK, TT2DIM, TTYPE_OK, tp_dim
 
 POS_COVER = ('正向', '主流程')
 NEG_COVER = ('反向', '异常', '边界')
@@ -36,9 +36,23 @@ TITLE_META_RX = re.compile(
 # 测试类型填 `稳定性测试`，而覆盖类型用 `异常`/`反向`。把它们列进来会把这种
 # 合规写法误判成违例（实测拦到 TC-EX-DATA-001）。
 # 通用型（功能/接口/安全/用户体验测试）本就可搭配多种覆盖类型，同样不列入。
-TTYPE_COVER = {
-    '反向测试': '反向', '边界测试': '边界', '异常测试': '异常',
-}
+# 原实现是 {'反向测试':'反向','边界测试':'边界','异常测试':'异常'} 的绑定表。
+# ttype 归正为只收六维度后，那三个键**再也不会出现**，该门禁会恒为空——
+# 不是「通过」，是「没东西可查」。故换成跨维度矛盾判据，保住「防两列自相矛盾」的原意。
+#
+# 判据：功能维度的用例（ttype→功能）其 cover 必须是功能视角或功能安全；
+#      跨维度的用例（性能/稳定性/兼容性/安全/用户体验测试）不得填 `正向/主流程`
+#      ——那是功能视角的说法，跨维度用例的 cover 应是其维度名或异常/反向/边界。
+# 为什么跨维度可以填异常/反向/边界：exception-library.md 明文规定 EX 交叉用例
+# 后果为「数据不一致」时归稳定性维度、ttype 填 `稳定性测试`、cover 用 `异常`。
+# 视角类 cover：与维度无关，任何维度都能用（正常路径/反向/边界/异常都是设计角度）。
+# **不要把「正向」当成功能维度专属**——「用户体验测试 + 正向」是合理写法
+# （正常操作路径下的体验），首版判据写成「跨维度不得填正向」拦到了 5 条合规用例，
+# 属误报。误报的检查很快就没人看，反过来削弱其他门禁。
+PERSPECTIVE_COVER = ('正向', '主流程', '反向', '边界', '异常',
+                     '功能安全-触发', '功能安全-恢复', '专项')
+# 维度名类 cover：填了它就等于声明「本用例属该维度」，必须与 ttype 推出的维度一致。
+DIM_COVER = ('性能', '稳定性', '兼容性', '安全', '用户体验', '功能')
 
 # 软提示C：设计技法 → 相容的测试类型白名单（按技法原理列，不是拟合现有数据）。
 # 未列入的技法（如异常注入）不参与该提示。
@@ -63,6 +77,49 @@ RES_CPU_MIN = ('cpu_all', 'cpu_rt_max', 'temp', 'freq')
 RES_MEM_MIN = ('mem_avail', 'anon', 'committed', 'slab_unreclaim',
                'pagetables', 'oom_kill')
 RES_VERDICT_KINDS = ('瞬时', '趋势', '状态')
+
+
+def degenerate_tps(cases, tp_name_map=None):
+    """1:1 退化的 TP 清单（空 = 无退化）。
+
+    未给正式名称时测试点描述**按定义**就是首条用例标题（drawio.derive 的默认派生），
+    因此「唯一用例 + 未给名称」即同文退化；给了名称说明已做抽象，不算。
+
+    **做成共享函数**：项目侧自建审计时要算同一个门禁，抄一份就会与 skill 分叉。
+    实测咖啡项目的手写门禁清单里根本没有这一项——上游加了退化门禁，
+    该项目**从未生效过**，直到调 gates() 时因缺键报 KeyError 才暴露。
+    """
+    import collections as _c
+    tp_titles = _c.defaultdict(list)
+    for c in cases:
+        tp_titles[c['tp']].append(c['tc'])
+    return sorted(tp for tp, lst in tp_titles.items()
+                  if len(lst) == 1 and not (tp_name_map or {}).get(tp))
+
+
+def cover_conflicts(cases):
+    """覆盖类型 ↔ 测试类型 跨维度矛盾的 TC 清单（空 = 无矛盾）。
+
+    抓的是「改了一个字段忘改另一个」——两列自相矛盾时导图、附表、矩阵各说一套。
+
+    **做成共享函数而非留在 compute 里**：项目侧要在自己的审计里算同一个门禁
+    （实测咖啡项目就把这段表达式抄了一份）。抄一份的后果是 skill 改判据后
+    项目侧照旧跑老逻辑，两处判定分叉——这正是本 skill 反复警告的。
+    """
+    bad = []
+    for c in cases:
+        cov = c['cover']
+        if cov in PERSPECTIVE_COVER:
+            continue                    # 视角类与维度无关，任何维度都能用
+        if cov in DIM_COVER and cov != TT2DIM.get(c['ttype'], '?'):
+            bad.append(c['tc'])         # 声明了别的维度，与 ttype 自相矛盾
+    return bad
+
+
+def enum_violations(cases):
+    """(ttype 非法的 TC, cover 非法的 TC)。同样供项目侧复用，不要各写一份。"""
+    return ([c['tc'] for c in cases if c['ttype'] not in TTYPE_OK],
+            [c['tc'] for c in cases if c['cover'] not in COVER_OK])
 
 
 def _spec_tcs(cases, spec):
@@ -238,16 +295,10 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
     # 信息量——思维导图里用例节点会因去重显示「同测试点主场景」，评审看不出测了哪些方面。
     # 判据取「唯一用例 且 标题与 TP 描述同文」：只看数量比会把「该测试点确实只需一条用例」
     # 的合规情形也算进来（如某些一次性校验项），必须叠加同文条件才不误报。
-    tp_titles = collections.defaultdict(list)
-    for c in CS:
-        tp_titles[c['tp']].append((c['tc'], (c['title'] or '').strip()))
-    # 未给正式名称时，测试点描述**按定义**就是首条用例标题（drawio.derive 的默认派生），
-    # 因此「唯一用例 + 未给名称」即同文退化；给了名称就说明已做抽象，不算。
-    tp_degenerate = sorted(
-        tp for tp, lst in tp_titles.items()
-        if len(lst) == 1 and not (tp_name_map or {}).get(tp))
+    # 判定见 degenerate_tps（抽成共享函数供项目侧复用，不在各处抄一份）
+    tp_degenerate = degenerate_tps(CS, tp_name_map)
     # 供 gate_notes 报口径：TP 全集与其中已给正式名称的个数。
-    tp_all = sorted(tp_titles)
+    tp_all = sorted({c['tp'] for c in CS})
     tp_named_n = sum(1 for tp in tp_all if (tp_name_map or {}).get(tp))
 
     # ---- 反模式：步骤与预期条数错位（构建期 assert 已挡，此处二次复核）----
@@ -285,12 +336,13 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
     # `验证码错误时提示重新输入`），一律不算违例。
     title_meta_bad = [c['tc'] for c in CS if TITLE_META_RX.search(c['title'] or '')]
 
-    # ---- 门禁 B：覆盖类型 ↔ 测试类型 必须同源 ----
-    # 专用型测试类型（反向/边界/异常/性能/稳定性/兼容性测试）各自绑定唯一覆盖类型；
-    # 抓的是「改了一个字段忘改另一个」——两列自相矛盾时，导图、附表、矩阵会各说一套。
-    # 通用型（功能/接口/安全/用户体验测试）可搭配多种覆盖类型，不在此约束内。
-    cover_bad = [c['tc'] for c in CS
-                 if c['ttype'] in TTYPE_COVER and c['cover'] != TTYPE_COVER[c['ttype']]]
+    # ---- 门禁 B0：ttype / cover 必须在合法枚举内（分类轴不许混填）----
+    # dsl.C() 已在构建期拦一次，但项目可能自带 C()（实测咖啡项目就是），
+    # 那条 assert 绕不到，故此处兜底。两层都要。
+    ttype_bad, cover_enum_bad = enum_violations(CS)
+
+    # ---- 门禁 B：覆盖类型 ↔ 测试类型 跨维度矛盾（判定见 cover_conflicts）----
+    cover_bad = cover_conflicts(CS)
 
     # ---- 软提示 C：设计技法 ↔ 测试类型 相容性（列出待人工确认，不阻断）----
     # 技法决定了用例在测什么，与测试类型应当相容；但边界情形确实存在
@@ -398,7 +450,8 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
         spec_ok=spec_ok, spec_reqs=sorted(spec_reqs),
         spec_companion=sorted(companion), spec_companion_bad=spec_companion_bad,
         pri_incons=pri_incons,
-        title_meta_bad=title_meta_bad, cover_bad=cover_bad, tech_warn=tech_warn,
+        title_meta_bad=title_meta_bad, cover_bad=cover_bad,
+        ttype_bad=ttype_bad, cover_enum_bad=cover_enum_bad, tech_warn=tech_warn,
         dim_bad=dim_bad, sec_gap=sec_gap, num_gap=num_gap, num_dup=num_dup,
         field_bad=field_bad, denom_ok=denom_ok, req_struct_bad=req_struct_bad,
         doc_sec_total=len(doc_secs), section_na_total=len(section_na),
@@ -449,8 +502,15 @@ def gate_notes(a):
         '标题写验证方法数=0':
             '正则查「手段介词+元动词收尾」(如「…由再次点击验证」);标题须写场景+预期'
             + ('' if not a['title_meta_bad'] else ';违例:' + ids('title_meta_bad')),
+        '测试类型与覆盖类型枚举合法':
+            ('测试类型只收六维度(反向/边界/异常属覆盖类型,不是测试类型);'
+             '覆盖类型在合法枚举内'
+             if not (a['ttype_bad'] or a['cover_enum_bad']) else
+             '违例 测试类型:%s 覆盖类型:%s'
+             % (ids('ttype_bad') or '无', ids('cover_enum_bad') or '无')),
         '覆盖类型与测试类型矛盾数=0':
-            '专用型测试类型(反向/边界/异常/性能/稳定性/兼容性)各绑定唯一覆盖类型,遍历比对'
+            '判据:覆盖类型填了维度名(性能/稳定性/兼容性/安全/用户体验/功能)时,'
+            '须与测试类型推出的维度一致;视角类(正向/反向/边界/异常/功能安全/专项)与维度无关,不约束'
             + ('' if not a['cover_bad'] else ';违例:' + ids('cover_bad')),
         'REQ清单结构性完整':
             '章节反查差集(文档章节全集%d−已引用−已标N/A %d)/编号连续/字段枚举/分母自洽 四项'
@@ -489,6 +549,8 @@ def gates(a):
         ('专项REQ配套功能用例齐全', a['spec_ok']),
         ('TP维度与用例维度错配=0', not a['dim_bad']),
         ('标题写验证方法数=0', not a['title_meta_bad']),
+        ('测试类型与覆盖类型枚举合法',
+         not (a['ttype_bad'] or a['cover_enum_bad'])),
         ('覆盖类型与测试类型矛盾数=0', not a['cover_bad']),
         ('REQ清单结构性完整', a['req_struct_bad'] == 0),
         ('测试点未1:1退化', not a['tp_degenerate']),

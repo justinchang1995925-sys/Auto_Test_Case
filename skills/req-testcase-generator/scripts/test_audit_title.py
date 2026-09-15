@@ -70,17 +70,49 @@ def t_title_meta_no_false_positive():
 
 
 def t_cover_mismatch_catches():
-    """功能维度内三个专用测试类型与覆盖类型矛盾时必须抓到。"""
-    for ttype, wrong in (('反向测试', '边界'), ('边界测试', '异常'),
-                         ('异常测试', '反向')):
+    """两列自相矛盾必须抓到：cover 填了维度名却与 ttype 推出的维度不一致。
+
+    判据换过一次。原先是 {反向测试:反向, 边界测试:边界, 异常测试:异常} 的绑定表，
+    但 ttype 归正为只收六维度后那三个键再也不会出现，绑定表会恒为空——
+    **不是通过，是没东西可查**。故改为跨维度矛盾判据，本测试同步换成新口径。
+    """
+    for ttype, wrong in (('功能测试', '性能'), ('性能测试', '稳定性'),
+                         ('用户体验测试', '安全')):
         a = run([mk('TC-X-001', '条件下行为符合预期', ttype, wrong)])
         assert a['cover_bad'] == ['TC-X-001'], '漏检 %s+%s' % (ttype, wrong)
-    # 正确配对不报
-    for ttype, right in (('反向测试', '反向'), ('边界测试', '边界'),
-                         ('异常测试', '异常')):
+    # 维度一致、以及视角类 cover（与维度无关）都不该报
+    for ttype, right in (('功能测试', '正向'), ('功能测试', '反向'),
+                         ('性能测试', '性能'), ('用户体验测试', '正向'),
+                         ('稳定性测试', '异常')):
         a = run([mk('TC-X-001', '条件下行为符合预期', ttype, right)])
         assert not a['cover_bad'], '误报 %s+%s' % (ttype, right)
-    return '3 组矛盾抓到、3 组正确放过'
+    return '3 组矛盾抓到、5 组合规放过（含视角类跨维度）'
+
+
+def t_ttype_enum_catches_sub_dimension():
+    """ttype 填子维度必须被枚举门禁抓到。
+
+    反向/边界/异常是**覆盖类型**（设计视角），不是测试类型。混填的后果是主表
+    看不出这些用例其实都属功能测试，且与 cover 列重复记录同一件事
+    （实测某项目 147 条里 47 条填错，占 32%）。
+    专项测试也不许出现在普通主表——它走专项两表。
+    """
+    for bad in ('反向测试', '边界测试', '异常测试', '专项测试'):
+        a = run([mk('TC-X-001', '条件下行为符合预期', bad, '反向')])
+        assert a['ttype_bad'] == ['TC-X-001'], '漏检 ttype=%s' % bad
+    for ok in ('功能测试', '接口测试', '性能测试', '安全测试'):
+        a = run([mk('TC-X-001', '条件下行为符合预期', ok, '正向')])
+        assert not a['ttype_bad'], '误报 ttype=%s' % ok
+    return '4 种非法抓到、4 种合法放过'
+
+
+def t_cover_enum_catches_illegal():
+    """cover 非法取值必须抓到。"""
+    a = run([mk('TC-X-001', '条件下行为符合预期', '功能测试', '负向')])
+    assert a['cover_enum_bad'] == ['TC-X-001'], '漏检非法 cover'
+    a = run([mk('TC-X-001', '条件下行为符合预期', '功能测试', '正向')])
+    assert not a['cover_enum_bad'], '误报合法 cover'
+    return '非法 cover 抓到、合法放过'
 
 
 def t_cover_allows_cross_dimension():
@@ -117,7 +149,9 @@ def t_tech_warn_is_soft():
 
 def t_gates_wired():
     """A/B 必须出现在 gates() 里，且违例时判为未通过。"""
-    a = run([mk('TC-X-001', '功能生效由重启验证', '反向测试', '边界')])
+    # 造违例要用**当前判据**下的矛盾：ttype 归正后 '反向测试' 已属非法枚举，
+    # 会被 ttype_bad 抓走而不再进 cover_bad，用它造违例测不到本门禁。
+    a = run([mk('TC-X-001', '功能生效由重启验证', '功能测试', '性能')])
     g = dict(audit.gates(a))
     for k in ('标题写验证方法数=0', '覆盖类型与测试类型矛盾数=0'):
         assert k in g, '门禁未接线: %s' % k

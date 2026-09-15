@@ -38,6 +38,7 @@ CLEAN = dict(
     ex_no_body=[], ex_cell_unrated=[], ex_no_basis=[], ex_must_gap=[],
     ex_ref_bad=[], pri_incons=[],
     res_ok=True, res_bad=[], res={}, res_exempt=None,
+    ttype_bad=[], cover_enum_bad=[],
 )
 
 
