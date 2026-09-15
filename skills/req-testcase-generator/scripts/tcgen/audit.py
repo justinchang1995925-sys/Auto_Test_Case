@@ -205,6 +205,33 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
         tp_tc[c['tp']].add(c['tc'])
     tp_no_tc = sorted(tp for tp, v in tp_tc.items() if not v)
 
+    # ---- 门禁：需求编号分组完整（顶层节点数 = 纳入需求数）----
+    # 只在 REQ 清单带「需求编号」（索引 8）时生效——即需求文档自带编号体系、
+    # 思维导图按需求编号分组的场景。
+    #
+    # 存在理由：按需求编号分组时，导图顶层节点数应当等于纳入的需求数，
+    # 数一下就知道有没有漏。实测踩过：文档 12 项打钩需求，导图只出 8 项，
+    # 靠用户手工数才发现整条 F07 没进 REQ 清单。
+    # **既有的「未覆盖 REQ」门禁抓不到这种漏**：它比对的是「REQ 清单 vs 追溯矩阵」，
+    # 而 F07 从没进过 REQ 清单，比对的两边都缺它，差集自然为空。
+    # 本门禁把「需求编号」作为第三方基准，专抓「整条需求没进清单」这一类。
+    #
+    # 注意本门禁只能校验「已进 REQ 清单的需求编号是否都有用例」。
+    # 「文档里有但 REQ 清单里完全没有的需求编号」它同样看不见——那一层由
+    # SKILL.md Phase 1.5「需求全集必须逐行核对」的人工回报兜住（放行条件 B2）。
+    # 两者互补：本门禁守「进了清单却没落用例」，B2 守「压根没进清单」。
+    fno_of = {r[0]: (r[8] or '').strip()
+              for r in req_src if len(r) > 8 and (r[8] or '').strip()}
+    fno_scope = sorted(set(fno_of[r[0]] for r in req_src
+                           if r[0] in fno_of and r[5] == '可测' and r[6] != '阻塞'))
+    fno_covered = set()
+    for c in CS:
+        f = fno_of.get(c['req'])
+        if f:
+            fno_covered.add(f)
+    fno_covered |= set(fno_of[r] for r in spec_reqs if r in fno_of)
+    fno_no_case = [f for f in fno_scope if f not in fno_covered]
+
     # ---- 门禁：测试点 1:1 退化（测试点层没做抽象，只是复读用例标题）----
     # 坍缩的对称反面：坍缩是「多 TP 挤进一条 TC」，退化是「每个 TP 只挂一条 TC 且
     # 描述与该用例标题同文」。它不违反坍缩/深度/追溯任何一条，却让测试点层完全失去
@@ -219,6 +246,9 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
     tp_degenerate = sorted(
         tp for tp, lst in tp_titles.items()
         if len(lst) == 1 and not (tp_name_map or {}).get(tp))
+    # 供 gate_notes 报口径：TP 全集与其中已给正式名称的个数。
+    tp_all = sorted(tp_titles)
+    tp_named_n = sum(1 for tp in tp_all if (tp_name_map or {}).get(tp))
 
     # ---- 反模式：步骤与预期条数错位（构建期 assert 已挡，此处二次复核）----
     step_bad = [c['tc'] for c in CS if len(c['steps']) != len(c['exp'])]
@@ -372,7 +402,9 @@ def compute(cases, req_src, ex=None, spec_reqs=frozenset(), fs_source_map=None,
         dim_bad=dim_bad, sec_gap=sec_gap, num_gap=num_gap, num_dup=num_dup,
         field_bad=field_bad, denom_ok=denom_ok, req_struct_bad=req_struct_bad,
         doc_sec_total=len(doc_secs), section_na_total=len(section_na),
-        tp_degenerate=tp_degenerate, fs_req=fs_req, fs_depth_bad=fs_depth_bad, fs_src_have=fs_src_have,
+        tp_degenerate=tp_degenerate, tp_all=tp_all, tp_named_n=tp_named_n,
+        fno_scope=fno_scope,
+        fno_no_case=fno_no_case, fs_req=fs_req, fs_depth_bad=fs_depth_bad, fs_src_have=fs_src_have,
         fs_src_bad=fs_src_bad, fs_elem_bad=fs_elem_bad,
         ex_inc=ex_inc, ex_library=ex_library, ex_no_body=ex_no_body,
         ex_cell_unrated=ex_cell_unrated, ex_no_basis=ex_no_basis,
@@ -430,6 +462,19 @@ def gate_notes(a):
         'EX交叉五项全通过':
             '本体用例/未评估格/缺依据/必测缺口/EX-ID非法 均为0;标"不适用"且依据充分的格不计缺口',
         '优先级与风险一致': '高↔P0/P1,中↔P2,低↔P3',
+        '测试点未1:1退化':
+            '唯一用例且未给正式名称=退化(未给名称时TP描述按定义即首条用例标题);'
+            'TP共%d个,其中%d个已给名称' % (len(a['tp_all']), a['tp_named_n'])
+            + ('' if not a['tp_degenerate'] else ';违例:' + ids('tp_degenerate')),
+        '需求编号分组完整(顶层节点数=需求数)':
+            ('本期REQ清单未带需求编号,该门禁不适用'
+             if not a['fno_scope'] else
+             '纳入需求编号%d项(%s),每项须至少落1条用例;'
+             '本门禁守「进了REQ清单却没落用例」,'
+             '「压根没进清单」由Phase1.5人工逐行核对兜(放行条件B2)'
+             % (len(a['fno_scope']), '、'.join(a['fno_scope'][:8])
+                + ('…' if len(a['fno_scope']) > 8 else ''))
+             + ('' if not a['fno_no_case'] else ';违例:' + ids('fno_no_case'))),
     }
 
 
@@ -447,6 +492,9 @@ def gates(a):
         ('覆盖类型与测试类型矛盾数=0', not a['cover_bad']),
         ('REQ清单结构性完整', a['req_struct_bad'] == 0),
         ('测试点未1:1退化', not a['tp_degenerate']),
+        # 需求编号分组完整：REQ 清单未带需求编号时该门禁不适用，恒判通过
+        # （fno_scope 为空 → fno_no_case 必空），不给无编号体系的项目添恒误报。
+        ('需求编号分组完整(顶层节点数=需求数)', not a['fno_no_case']),
         ('功能安全深度达标(触发+恢复,多触发源)',
          not (a['fs_depth_bad'] or a['fs_src_bad'] or a['fs_elem_bad'])),
         ('EX交叉五项全通过',

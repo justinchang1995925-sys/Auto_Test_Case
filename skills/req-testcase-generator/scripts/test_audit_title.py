@@ -6,6 +6,7 @@
   A 标题写「验证方法」而非「场景+预期」 —— 硬门禁，须零误报
   B 覆盖类型 ↔ 测试类型 矛盾           —— 硬门禁，须放过 EX 交叉的合规写法
   C 设计技法 ↔ 测试类型 相容性         —— 软提示，不进 gates()
+  另含：测试点 1:1 退化、需求编号分组完整，以及「文档 A 组 = gates() 项数」的一致性元测试
 
 存在理由：project_template 的样例数据全部合规，跑 build.py 时这三项永远为 0，
 等于新门禁没被执行。本文件专门造违例数据把它们跑到。
@@ -209,6 +210,108 @@ def t_tp_multi_case_not_degenerate():
     return '多用例测试点不误报'
 
 
+
+# ---------- 需求编号分组完整（顶层节点数 = 需求数）----------
+# REQ 元组第 9 位（索引 8）是需求编号，位置契约见 test_xlsx_req_col.py。
+RQF = [
+    ('REQ-001', '烧录', '产测需求', '1. Feature 大表 F17', '功能', '可测', '待覆盖', '-', 'F17'),
+    ('REQ-002', '标零', '产测需求', '1. Feature 大表 F15', '功能', '可测', '待覆盖', '-', 'F15'),
+    ('REQ-003', '标定', '产测需求', '1. Feature 大表 F07', '功能', '可测', '待覆盖', '-', 'F07'),
+]
+
+
+def t_fno_catches_requirement_without_case():
+    """进了 REQ 清单但一条用例都没落的需求编号必须被抓到。
+
+    这是「导图顶层节点数 < 需求数」的机器化判据：实测 12 项打钩需求只出 8 项，
+    靠人工数才发现漏了整条 F07。
+    """
+    cases = [mk('TC-A-001', '整机烧录成功', '功能测试', '正向', req='REQ-001'),
+             mk('TC-B-001', '标零精度达标', '功能测试', '正向', req='REQ-002', tp='TP-F-002')]
+    a = audit.compute(cases=cases, req_src=RQF)
+    assert a['fno_no_case'] == ['F07'], '未抓到无用例的需求编号: %s' % (a['fno_no_case'],)
+    assert dict(audit.gates(a))['需求编号分组完整(顶层节点数=需求数)'] is False, \
+        '有需求没落用例却判门禁通过'
+    return 'F07 无用例被抓到'
+
+
+def t_fno_not_applicable_without_numbers():
+    """REQ 清单不带需求编号时该门禁不适用，必须恒判通过——不给普通项目添恒误报。
+
+    恒误报的代价见 pipeline.md：修不掉的非零退出会让人绕过整道验收。
+    """
+    a = audit.compute(cases=[mk('TC-A-001', '登录成功', '功能测试', '正向')], req_src=REQ)
+    assert a['fno_scope'] == [], '无编号体系却算出了编号范围: %s' % (a['fno_scope'],)
+    assert a['fno_no_case'] == []
+    assert dict(audit.gates(a))['需求编号分组完整(顶层节点数=需求数)'] is True, \
+        '无编号体系的项目被判门禁未过'
+    return '无编号体系时不适用、不误报'
+
+
+def t_fno_excludes_blocked_and_untestable():
+    """阻塞与不可测需求不计入分母——与「覆盖 100% 只统计已确认且可测」口径一致。"""
+    rq = list(RQF) + [
+        ('REQ-004', '待定项', '产测需求', '1. Feature 大表 F05', '功能', '不可测', '阻塞', '待Q', 'F05'),
+    ]
+    cases = [mk('TC-A-001', '整机烧录成功', '功能测试', '正向', req='REQ-001'),
+             mk('TC-B-001', '标零精度达标', '功能测试', '正向', req='REQ-002', tp='TP-F-002'),
+             mk('TC-C-001', '标定完成', '功能测试', '正向', req='REQ-003', tp='TP-F-003')]
+    a = audit.compute(cases=cases, req_src=rq)
+    assert 'F05' not in a['fno_scope'], ' 阻塞需求被计入分母: %s' % (a['fno_scope'],)
+    assert a['fno_no_case'] == [], '合规数据误报: %s' % (a['fno_no_case'],)
+    return '阻塞/不可测需求不计入分母'
+
+
+def t_fno_counts_spec_only_requirement():
+    """仅由专项用例覆盖的需求算已覆盖——否则专项 REQ 会被误判为没落用例。"""
+    cases = [mk('TC-A-001', '整机烧录成功', '功能测试', '正向', req='REQ-001'),
+             mk('TC-B-001', '标零精度达标', '功能测试', '正向', req='REQ-002', tp='TP-F-002')]
+    a = audit.compute(cases=cases, req_src=RQF, spec_reqs={'REQ-003'})
+    assert a['fno_no_case'] == [], '专项覆盖的需求被误判无用例: %s' % (a['fno_no_case'],)
+    return '专项覆盖的需求算已覆盖'
+
+
+def t_fno_note_states_its_blind_spot():
+    """口径说明必须写明本门禁的盲区，并指向兜住盲区的那一层。
+
+    盲区：文档里有、但 REQ 清单里压根没有的需求编号，本门禁看不见
+    （它的基准就是 REQ 清单本身）。那一层由 Phase 1.5 人工逐行核对兜。
+    不写明盲区的门禁会给人「已经全自动守住了」的错觉，比没有门禁更危险。
+    """
+    a = audit.compute(cases=[mk('TC-A-001', '烧录成功', '功能测试', '正向', req='REQ-001')],
+                      req_src=RQF)
+    note = dict(audit.gate_notes(a))['需求编号分组完整(顶层节点数=需求数)']
+    assert 'B2' in note or '逐行核对' in note, '口径未指向兜底那一层: %r' % note
+    return '口径说明写明了盲区与兜底层'
+
+
+
+def t_doc_a_group_matches_gates():
+    """SKILL.md 放行条件 A 组的行数必须等于 gates() 的项数。
+
+    A 组的含义是「脚本自动判定」。往 A 组写一条 gates() 里没有的项，
+    等于告诉读者「这项机器已经守住了」而实际没人算——比漏写更危险，
+    因为它会让人不再人工核对。实测踩过：重排放行条件时把
+    「追溯缺口 / TP 无 REQ 关联」放进了 A 组，而 compute() 从未计算这两项
+    （tp_no_tc 只覆盖「TP 无专属 TC」），后来移回 B 组并注明需人工核。
+    """
+    import inspect
+    import io
+    import os
+    import re
+    gk = re.findall(r"\('([^']+)'", inspect.getsource(audit.gates))
+    doc_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            '..', 'SKILL.md')
+    doc = io.open(doc_path, encoding='utf-8').read()
+    i = doc.index('**A 组：脚本自动判定')
+    j = doc.index('**B 组：人工确认')
+    rows = [l for l in doc[i:j].split('\n') if l.startswith('| A')]
+    assert len(rows) == len(gk), (
+        'A 组 %d 行 vs gates() %d 项：A 组只能放脚本真能判的项，'
+        '人工核对项应放 B 组' % (len(rows), len(gk)))
+    return 'A 组 %d 行与 gates() 项数一致' % len(rows)
+
+
 def main():
     ts = [t_title_meta_catches, t_title_meta_no_false_positive,
           t_cover_mismatch_catches, t_cover_allows_cross_dimension,
@@ -216,7 +319,13 @@ def main():
           t_fs_gate_no_false_positive_when_no_fs_req,
           t_fs_gate_still_catches_missing_source,
           t_tp_degenerate_caught, t_tp_named_not_degenerate,
-          t_tp_multi_case_not_degenerate]
+          t_tp_multi_case_not_degenerate,
+          t_fno_catches_requirement_without_case,
+          t_fno_not_applicable_without_numbers,
+          t_fno_excludes_blocked_and_untestable,
+          t_fno_counts_spec_only_requirement,
+          t_fno_note_states_its_blind_spot,
+          t_doc_a_group_matches_gates]
     bad = 0
     for t in ts:
         try:
